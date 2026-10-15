@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 240" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#000737"/>
+      <stop offset=".55" stop-color="#102858"/>
+      <stop offset="1" stop-color="#1E3974"/>
+    </linearGradient>
+    <linearGradient id="mountain" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#829BCB" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#829BCB" stop-opacity=".025"/>
+    </linearGradient>
+    <linearGradient id="city" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#F7D990" stop-opacity=".27"/>
+      <stop offset="1" stop-color="#91A9D5" stop-opacity=".12"/>
+    </linearGradient>
+  </defs>
+  <rect width="1800" height="240" fill="url(#sky)"/>
+  <circle cx="1450" cy="36" r="94" fill="#F7D990" opacity=".055"/>
+  <path d="M0 164 95 111l55 25 95-68 94 77 82-40 95 58 104-81 75 54 90-30 100 55 96-87 96 59 82-34 88 55 115-96 94 80 72-26 102 68v60H0Z" fill="url(#mountain)"/>
+  <path d="M0 198h74v-34h39v34h24v-55h48v55h23v-25h57v25h44v-42h42v42h31v-65h39v65h35v-31h50v31h36v-52h50v52h42v-29h45v29h53v-46h45v46h47v-24h42v24h42v-58h48v58h50v-35h54v35h41v-46h47v46h41v-28h57v28h50v-51h42v51h47v-35h55v35h52v42H0Z" fill="url(#city)"/>
+  <!-- Gedung Sate: recognizable stepped roof and central ornament -->
+  <g transform="translate(1110 82)" fill="#F7D990" opacity=".29">
+    <path d="M0 126h228v-12h-17V68h-22V45h-34V28h-26V12h-9V0h-8v12h-9v16h-27v17H42v23H20v46H0Z"/>
+    <path d="M91 28h56v18H91zM68 45h102v13H68z" opacity=".72"/>
+    <path d="M36 75h20v31H36zm48 0h20v31H84zm74 0h20v31h-20z" fill="#000737" opacity=".72"/>
+    <path d="M4 125h220" fill="none" stroke="#F7D990" stroke-width="5" opacity=".65"/>
+  </g>
+  <path d="M0 221h1800" stroke="#F7D990" stroke-opacity=".28" stroke-width="2"/>
+  <path d="M760 212c90-7 160-7 244 0M790 222c72-5 129-5 191 0" fill="none" stroke="#E8B650" stroke-opacity=".15" stroke-width="2"/>
+</svg>

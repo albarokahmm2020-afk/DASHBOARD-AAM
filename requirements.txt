@@ -1,0 +1,8 @@
+streamlit>=1.38,<2
+pandas>=2.1,<4
+openpyxl>=3.1,<4
+altair>=5,<7
+requests>=2.31,<3
+google-auth>=2.35,<3
+python-pptx>=1.0,<2
+Pillow>=10,<13

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+<defs>
+ <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#000737"/><stop offset=".55" stop-color="#0C1D42"/><stop offset="1" stop-color="#22396F"/></linearGradient>
+ <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FCF1CF" stop-opacity="0"/><stop offset="1" stop-color="#FCF1CF" stop-opacity=".12"/></linearGradient>
+</defs>
+<rect width="1600" height="1000" fill="url(#sky)"/>
+<circle cx="1280" cy="180" r="150" fill="#FCF1CF" opacity=".035"/>
+<path d="M0 650 Q180 545 350 630 T700 600 T1050 640 T1370 575 T1600 620 V1000 H0Z" fill="#22396F" opacity=".13"/>
+<path d="M0 740 Q220 630 430 710 T850 680 T1230 715 T1600 655 V1000 H0Z" fill="#0C1D42" opacity=".08"/>
+<g fill="#FCF1CF" opacity=".11">
+ <path d="M0 790h120v-95h55v95h42v-130h70v130h45v-75h92v75h45v-150h68v150h47v-110h90v110h43v-65h74v65h42v-135h69v135h54v-92h88v92h46v-160h72v160h48v-84h90v84h56v-130h68v130h60v-90h95v90h53v-142h79v142h58v-97h88v97h49v-132h82v132h77v210H0Z"/>
+</g>
+<!-- Bandung landmark silhouette: Gedung Sate with its central roof ornament -->
+<g fill="#FCF1CF" opacity=".17" transform="translate(635 535)">
+ <path d="M0 195h345v-18h-25v-75h-28v-31h-47V48h-29V22h-13v26h-29V71h-47v31h-29v75H0Z"/>
+ <path d="M157 22h43V0h-9v-18h-8v18h-26Z"/>
+ <path d="M34 120h24v44H34zm55 0h24v44H89zm142 0h24v44h-24zm55 0h24v44h-24z" fill="#000737" opacity=".55"/>
+ <path d="M0 195h345" stroke="#FCF1CF" stroke-width="8" opacity=".35"/>
+</g>
+<path d="M0 825h1600" stroke="#FCF1CF" stroke-width="4" opacity=".18"/>
+<rect y="780" width="1600" height="220" fill="url(#haze)"/>
+</svg>
