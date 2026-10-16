@@ -3,6 +3,7 @@ import io
 import base64
 import json
 import hashlib
+import inspect
 import html
 import math
 import os
@@ -109,6 +110,7 @@ def _dashboard_data_editor(data, *args, **kwargs):
 
 st.data_editor = _dashboard_data_editor
 
+_original_download_button=st.download_button
 # ── PPT export ────────────────────────────────────────────────────────────────
 try:
     from pptx import Presentation
@@ -690,6 +692,139 @@ if not ASSET_DIR.exists():
 BRANCH_OPTIONS={"BDG":"Bandung","PTK":"Pontianak","MDN":"Medan"}
 # Folder link provided by the user. An explicit file ID in secrets overrides it.
 DEFAULT_DRIVE_DATABASE_FOLDER_ID="1Ef0DsWdqJ-fy7ahuQ0NR3H1dO2QkHk4b"
+def _drive_service_credentials():
+    """Build credentials with write access limited by the service account's Drive sharing."""
+    from google.oauth2.service_account import Credentials
+    return Credentials.from_service_account_info(
+        dict(st.secrets["gcp_service_account"]),
+        scopes=["https://www.googleapis.com/auth/drive"],
+    )
+
+def _drive_folder_id(folder_name, parent_id):
+    from google.auth.transport.requests import AuthorizedSession
+    session=AuthorizedSession(_drive_service_credentials())
+    response=session.get("https://www.googleapis.com/drive/v3/files",params={
+        "q":f"'{parent_id}' in parents and name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+        "fields":"files(id,name)","pageSize":100,
+        "supportsAllDrives":"true","includeItemsFromAllDrives":"true",
+    },timeout=30)
+    response.raise_for_status()
+    folders=response.json().get("files",[])
+    if folders:
+        return folders[0]["id"]
+    response=session.post("https://www.googleapis.com/drive/v3/files",params={
+        "fields":"id","supportsAllDrives":"true",
+    },json={"name":folder_name,"mimeType":"application/vnd.google-apps.folder","parents":[parent_id]},timeout=30)
+    response.raise_for_status()
+    return response.json()["id"]
+
+def _drive_storage_folder(category, branch=None):
+    """Return/create a folder inside the user-selected shared dashboard folder."""
+    drive_settings=st.secrets.get("google_drive",{})
+    root_id=str(drive_settings.get("storage_folder_id",drive_settings.get("database_folder_id",DEFAULT_DRIVE_DATABASE_FOLDER_ID))).strip()
+    if not root_id:
+        raise RuntimeError("Folder penyimpanan Google Drive belum dikonfigurasi.")
+    folder_id=_drive_folder_id("Dashboard_Data" if category!="exports" else "Dashboard_Exports",root_id)
+    if branch:
+        folder_id=_drive_folder_id(str(branch),folder_id)
+    if category not in ("", "exports"):
+        folder_id=_drive_folder_id(str(category),folder_id)
+    return folder_id
+
+def _drive_upload_bytes(file_name,payload,mime_type="application/octet-stream",category="exports",branch=None):
+    """Create or replace a file in the shared Drive folder."""
+    from google.auth.transport.requests import AuthorizedSession
+    import uuid
+    folder_id=_drive_storage_folder(category,branch)
+    session=AuthorizedSession(_drive_service_credentials())
+    safe_name=str(file_name).replace("'","\\'")
+    response=session.get("https://www.googleapis.com/drive/v3/files",params={
+        "q":f"'{folder_id}' in parents and name = '{safe_name}' and trashed = false",
+        "fields":"files(id,name)","pageSize":100,
+        "supportsAllDrives":"true","includeItemsFromAllDrives":"true",
+    },timeout=30)
+    response.raise_for_status()
+    boundary="codex_"+uuid.uuid4().hex
+    body=(f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+
+          json.dumps({"name":str(file_name),"mimeType":mime_type},ensure_ascii=False)+
+          f"\r\n--{boundary}\r\nContent-Type: {mime_type}\r\n\r\n").encode("utf-8")+payload+f"\r\n--{boundary}--".encode("utf-8")
+    matches=response.json().get("files",[])
+    if matches:
+        url=f"https://www.googleapis.com/upload/drive/v3/files/{matches[0]['id']}"
+        response=session.patch(url,params={"uploadType":"multipart","supportsAllDrives":"true"},
+            data=body,headers={"Content-Type":f"multipart/related; boundary={boundary}"},timeout=120)
+    else:
+        url="https://www.googleapis.com/upload/drive/v3/files"
+        response=session.post(url,params={"uploadType":"multipart","supportsAllDrives":"true"},
+            data=body,headers={"Content-Type":f"multipart/related; boundary={boundary}"},timeout=120)
+    response.raise_for_status()
+    return response.json().get("id")
+
+def _drive_find_file(file_name,category,branch=None):
+    from google.auth.transport.requests import AuthorizedSession
+    folder_id=_drive_storage_folder(category,branch)
+    response=AuthorizedSession(_drive_service_credentials()).get("https://www.googleapis.com/drive/v3/files",params={
+        "q":f"'{folder_id}' in parents and name = '{str(file_name).replace(chr(39), chr(92)+chr(39))}' and trashed = false",
+        "fields":"files(id,name)","pageSize":100,
+        "supportsAllDrives":"true","includeItemsFromAllDrives":"true",
+    },timeout=30)
+    response.raise_for_status()
+    files=response.json().get("files",[])
+    return files[0]["id"] if files else None
+
+def _drive_download_to_path(file_name,path,category,branch=None):
+    from google.auth.transport.requests import AuthorizedSession
+    file_id=_drive_find_file(file_name,category,branch)
+    if not file_id:
+        return False
+    response=AuthorizedSession(_drive_service_credentials()).get(
+        f"https://www.googleapis.com/drive/v3/files/{file_id}",params={"alt":"media","supportsAllDrives":"true"},timeout=120)
+    response.raise_for_status()
+    path=Path(path); path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(response.content)
+    return True
+
+def _drive_delete_file(file_name,category,branch=None):
+    from google.auth.transport.requests import AuthorizedSession
+    file_id=_drive_find_file(file_name,category,branch)
+    if not file_id: return False
+    response=AuthorizedSession(_drive_service_credentials()).patch(
+        f"https://www.googleapis.com/drive/v3/files/{file_id}",params={"supportsAllDrives":"true"},json={"trashed":True},timeout=30)
+    response.raise_for_status()
+    return True
+
+def _as_download_bytes(data):
+    if isinstance(data,bytes): return data
+    if isinstance(data,(bytearray,memoryview)): return bytes(data)
+    if isinstance(data,str): return data.encode("utf-8")
+    if hasattr(data,"getvalue"): return data.getvalue()
+    if hasattr(data,"read"):
+        position=data.tell() if hasattr(data,"tell") else None
+        payload=data.read()
+        if position is not None and hasattr(data,"seek"): data.seek(position)
+        return payload
+    return bytes(data)
+
+_original_download_button=st.download_button
+def _download_button_with_drive_copy(*args,**kwargs):
+    result=_original_download_button(*args,**kwargs)
+    if not st.secrets.get("gcp_service_account"):
+        return result
+    positional=list(args)
+    file_name=kwargs.get("file_name") or (positional[2] if len(positional)>2 else "export.bin")
+    payload=kwargs.get("data", positional[1] if len(positional)>1 else b"")
+    mime_type=kwargs.get("mime", positional[3] if len(positional)>3 else "application/octet-stream")
+    original_key=kwargs.get("key")
+    caller=inspect.currentframe().f_back
+    stable_key=str(original_key or f"{Path(caller.f_code.co_filename).name}_{caller.f_lineno}_{file_name}")
+    if st.button("Simpan salinan ke Google Drive",key="drive_copy_"+hashlib.sha1(stable_key.encode()).hexdigest()[:16]):
+        try:
+            _drive_upload_bytes(str(file_name),_as_download_bytes(payload),mime_type,"exports",ACTIVE_BRANCH_CODE)
+            st.success(f"{file_name} disimpan di Google Drive → Dashboard_Exports/{ACTIVE_BRANCH_CODE}.")
+        except Exception as exc:
+            st.error(f"Gagal menyimpan ke Google Drive: {exc}")
+    return result
+st.download_button=_download_button_with_drive_copy
+
 def _reset_branch_session():
     _keep={"active_branch_code","db"}
     for _state_key in list(st.session_state.keys()):
@@ -717,12 +852,48 @@ SAVED_TARGET_DIR=APP_DIR if ACTIVE_BRANCH_CODE=="BDG" else BRANCH_DATA_DIR
 OVERVIEW_DATA_DIR=APP_DIR if ACTIVE_BRANCH_CODE=="BDG" else BRANCH_DATA_DIR
 DAILY_DISCIPLINE_PATH=APP_DIR/"daily_discipline_latest.csv" if ACTIVE_BRANCH_CODE=="BDG" else BRANCH_DATA_DIR/"daily_discipline_latest.csv"
 VISIT_LOG_PATH=APP_DIR/"visit_log.csv" if ACTIVE_BRANCH_CODE=="BDG" else BRANCH_DATA_DIR/"visit_log.csv"
+def _restore_drive_state():
+    """Restore persistent operational files from Drive before loading app state."""
+    if not st.secrets.get("gcp_service_account") or st.session_state.get("_drive_state_restored_branch")==ACTIVE_BRANCH_CODE:
+        return
+    files=[
+        (SETTINGS_PATH,"dashboard_settings.json","settings"),
+        (VISIT_LOG_PATH,"visit_log.csv","visit_logs"),
+        (DAILY_DISCIPLINE_PATH,"daily_discipline_latest.csv","reports"),
+        (OVERVIEW_DATA_DIR/"overview_calendar.xlsx","overview_calendar.xlsx","overview"),
+        (OVERVIEW_DATA_DIR/"overview_fixed_call.xlsx","overview_fixed_call.xlsx","overview"),
+    ]
+    try:
+        for path,name,category in files:
+            _drive_download_to_path(name,path,category,ACTIVE_BRANCH_CODE)
+        PROGRAM_TARGET_DIR.mkdir(parents=True,exist_ok=True)
+        folder_id=_drive_storage_folder("program_targets",ACTIVE_BRANCH_CODE)
+        from google.auth.transport.requests import AuthorizedSession
+        session=AuthorizedSession(_drive_service_credentials())
+        response=session.get("https://www.googleapis.com/drive/v3/files",params={
+            "q":f"'{folder_id}' in parents and trashed = false","fields":"files(id,name,mimeType)","pageSize":1000,
+            "supportsAllDrives":"true","includeItemsFromAllDrives":"true",
+        },timeout=30)
+        response.raise_for_status()
+        for item in response.json().get("files",[]):
+            if item.get("mimeType")=="application/vnd.google-apps.folder": continue
+            payload=session.get(f"https://www.googleapis.com/drive/v3/files/{item['id']}",params={"alt":"media","supportsAllDrives":"true"},timeout=120)
+            payload.raise_for_status()
+            (PROGRAM_TARGET_DIR/item["name"]).write_bytes(payload.content)
+        st.session_state["_drive_state_restored_branch"]=ACTIVE_BRANCH_CODE
+    except Exception as exc:
+        st.warning(f"Tidak dapat memuat file simpanan dari Google Drive: {exc}")
+_restore_drive_state()
 def load_settings():
     try: return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError): return {}
 def save_settings(settings):
     SETTINGS_PATH.parent.mkdir(parents=True,exist_ok=True)
-    SETTINGS_PATH.write_text(json.dumps(settings,ensure_ascii=False,indent=2),encoding="utf-8")
+    payload=json.dumps(settings,ensure_ascii=False,indent=2).encode("utf-8")
+    SETTINGS_PATH.write_bytes(payload)
+    if st.secrets.get("gcp_service_account"):
+        try: _drive_upload_bytes(SETTINGS_PATH.name,payload,"application/json","settings",ACTIVE_BRANCH_CODE)
+        except Exception as exc: st.error(f"Konfigurasi tersimpan sementara, tetapi gagal disinkronkan ke Google Drive: {exc}")
 settings=load_settings()
 def program_label(program, month=None):
     if month is None:
@@ -1169,6 +1340,9 @@ with st.sidebar:
                 state_key=f"{file_key}_fingerprint"
                 if st.session_state.get(state_key)!=fingerprint:
                     path.write_bytes(content)
+                    if st.secrets.get("gcp_service_account"):
+                        try: _drive_upload_bytes(path.name,content,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","overview",ACTIVE_BRANCH_CODE)
+                        except Exception as exc: st.error(f"File diperbarui sementara, tetapi gagal disinkronkan ke Google Drive: {exc}")
                     st.session_state[state_key]=fingerprint
                     st.success(f"{path.name} diperbarui.")
             st.caption(f"File aktif: {path.name}" if path.exists() else f"File belum tersedia: {path.name}")
@@ -1813,7 +1987,10 @@ if main_section=="Program Push" and "_active_push_month" in dir() and not st.ses
                                     _target_upload_df=_target_upload_df.rename(columns=_target_rename)
                                     _target_upload_df["Program"]=_p
                                     PROGRAM_TARGET_DIR.mkdir(parents=True,exist_ok=True)
-                                    _target_upload_df.to_csv(_program_target_path,index=False,encoding="utf-8-sig")
+                                    _target_csv=_target_upload_df.to_csv(index=False).encode("utf-8-sig")
+                                    _program_target_path.write_bytes(_target_csv)
+                                    if st.secrets.get("gcp_service_account"):
+                                        _drive_upload_bytes(_program_target_path.name,_target_csv,"text/csv","program_targets",ACTIVE_BRANCH_CODE)
                                     st.success(f"Target {_p} berhasil disimpan dan hanya digunakan untuk program ini.")
                                     st.rerun()
                             except Exception as _target_error:
@@ -1821,6 +1998,9 @@ if main_section=="Program Push" and "_active_push_month" in dir() and not st.ses
                 with _target_col2:
                     if st.button("Hapus target khusus",key=f"remove_program_target_{key(_p).replace(' ','_')}",width="stretch",disabled=not _program_target_path.exists()):
                         _program_target_path.unlink(missing_ok=True)
+                        if st.secrets.get("gcp_service_account"):
+                            try: _drive_delete_file(_program_target_path.name,"program_targets",ACTIVE_BRANCH_CODE)
+                            except Exception as exc: st.error(f"Target di Drive gagal dihapus: {exc}")
                         st.success(f"Target khusus {_p} dihapus; target dasar kembali digunakan.")
                         st.rerun()
                 st.caption(f"Target khusus tersimpan: {_program_target_path.name}" if _program_target_path.exists() else "Belum ada target khusus. Akan digunakan target dasar jika tersedia.")
@@ -3403,7 +3583,11 @@ elif main_section=="Report":
                     discipline_df["TGT RC"]=pd.to_numeric(discipline_df["TGT RC"],errors="coerce").fillna(0)
                     discipline_df["ACT"]=pd.to_numeric(discipline_df["ACT"],errors="coerce").fillna(0)
                     DAILY_DISCIPLINE_PATH.parent.mkdir(parents=True,exist_ok=True)
-                    discipline_df.to_csv(DAILY_DISCIPLINE_PATH,index=False,encoding="utf-8-sig")
+                    _discipline_csv=discipline_df.to_csv(index=False).encode("utf-8-sig")
+                    DAILY_DISCIPLINE_PATH.write_bytes(_discipline_csv)
+                    if st.secrets.get("gcp_service_account"):
+                        try: _drive_upload_bytes(DAILY_DISCIPLINE_PATH.name,_discipline_csv,"text/csv","reports",ACTIVE_BRANCH_CODE)
+                        except Exception as exc: st.error(f"Laporan tersimpan sementara, tetapi gagal disinkronkan ke Google Drive: {exc}")
             except Exception as _discipline_error:
                 st.error(f"File kedisiplinan tidak dapat dibaca: {_discipline_error}")
         if discipline_df is None:
@@ -6001,7 +6185,11 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                     reasons_to_save=save_rows[save_rows["Reason"].astype(str).str.strip().ne("")]
                     combined=pd.concat([existing,reasons_to_save],ignore_index=True).reindex(columns=all_visit_columns).fillna("").astype(str)
                     if not combined.equals(existing_visit_log.reindex(columns=all_visit_columns,fill_value="").fillna("").astype(str)):
-                        combined.to_csv(VISIT_LOG_PATH,index=False,encoding="utf-8-sig")
+                        _visit_csv=combined.to_csv(index=False).encode("utf-8-sig")
+                        VISIT_LOG_PATH.write_bytes(_visit_csv)
+                        if st.secrets.get("gcp_service_account"):
+                            try: _drive_upload_bytes(VISIT_LOG_PATH.name,_visit_csv,"text/csv","visit_logs",ACTIVE_BRANCH_CODE)
+                            except Exception as exc: st.error(f"Log kunjungan tersimpan sementara, tetapi gagal disinkronkan ke Google Drive: {exc}")
                     # Export — sertakan tanggal & info sesi di nama file
                     export_label=f"{pd.Timestamp(selected_date):%Y%m%d}_{day_value}_W{int(week_value)}"
                     st.download_button(
@@ -6067,12 +6255,15 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                                 # Tombol hapus semua log
                                 if st.button("🗑 Hapus Semua Data Riwayat",key="delete_visit_log",type="secondary"):
                                     VISIT_LOG_PATH.unlink(missing_ok=True)
+                                    if st.secrets.get("gcp_service_account"):
+                                        try: _drive_delete_file(VISIT_LOG_PATH.name,"visit_logs",ACTIVE_BRANCH_CODE)
+                                        except Exception as exc: st.error(f"Log lokal terhapus, tetapi gagal dihapus dari Google Drive: {exc}")
                                     st.warning("Database riwayat kunjungan telah dihapus.")
                                     st.rerun()
 
 
 st.divider()
-st.caption("Pilihan program, filter, halaman dashboard, dan sasaran disimpan di folder aplikasi. Insight dihitung lokal dari actual, target, gap, dan detail Sales Person Title.")
+st.caption("Pilihan program, filter, halaman dashboard, dan sasaran disimpan di Google Drive per cabang. Insight dihitung lokal dari actual, target, gap, dan detail Sales Person Title.")
 st.caption("RB menghitung Customer Name unik dengan Sales Value Gross > 0 pada bulan terpilih; tanpa kolom pelanggan, aplikasi menghitung baris transaksi positif. Total Sales menjumlahkan Sales Value Gross dari seluruh transaksi yang cocok dengan konfigurasi terpilih. Target default scorecard mengikuti template dan dapat diedit di submenu Sasaran Program.")
 
 GEMINI_MODELS=["gemini-3.8-flash"]
