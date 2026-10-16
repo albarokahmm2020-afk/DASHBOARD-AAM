@@ -1216,8 +1216,14 @@ if main_section=="Program Push":
 
     # Bulan aktif tab
     _now_month = pd.Timestamp.now().month
-    _saved_tab = st.session_state.get("push_month_tab_idx", _now_month-1)
-    if _saved_tab >= 12: _saved_tab = _now_month-1
+    _saved_tab = st.session_state.get("push_month_tab_idx", settings.get("push_month_tab_idx", _now_month-1))
+    try:
+        _saved_tab = int(_saved_tab)
+    except (TypeError, ValueError):
+        _saved_tab = _now_month-1
+    if not 0 <= _saved_tab < 12:
+        _saved_tab = _now_month-1
+    st.session_state.setdefault("push_month_tab_idx", _saved_tab)
 
     _active_push_month     = _tab_months[_saved_tab]
     _active_push_month_num = _saved_tab + 1
@@ -1232,6 +1238,8 @@ if main_section=="Program Push":
                 if st.button(_tabbr, key=f"tab_month_{_ti}", width="stretch",
                              type="primary" if _is_active else "secondary"):
                     st.session_state["push_month_tab_idx"] = _ti
+                    settings["push_month_tab_idx"] = _ti
+                    save_settings(settings)
                     st.rerun()
 
     # ── Load konfigurasi per bulan ────────────────────────────────────────
@@ -1293,9 +1301,9 @@ with st.sidebar:
         _drive_settings=st.secrets.get("google_drive",{})
         _gcp_account=st.secrets.get("gcp_service_account",{})
         _drive_file_id=str(_drive_settings.get("database_file_id","")).strip()
-        _drive_folder_id=str(_drive_settings.get("database_folder_id",DEFAULT_DRIVE_DATABASE_FOLDER_ID)).strip()
+        _drive_database_folder_id=str(_drive_settings.get("database_folder_id",DEFAULT_DRIVE_DATABASE_FOLDER_ID)).strip()
         _drive_is_folder=not bool(_drive_file_id)
-        _drive_source_id=_drive_file_id or _drive_folder_id
+        _drive_source_id=_drive_file_id or _drive_database_folder_id
         _drive_configured=bool(_drive_source_id and _gcp_account)
     except Exception:
         _drive_settings={}; _gcp_account={}; _drive_configured=False
@@ -2682,7 +2690,7 @@ def summary_program_insight(scoped,program,selected,actual,target_value,achievem
         remaining=max(0.0,float(target_value)-(float(actual) if actual is not None else 0.0))
         unit="sales" if metric=="Total Sales" else "relasi"
         if remaining>0:
-            focus=", ".join(str(title) for title in below_titles["Sales Person Title"].head(3))
+            focus=", ".join(str(title) for title in below_titles["Sales Person Title"].head(3)) if "Sales Person Title" in below_titles.columns else ""
             focus_text=f" Owner utama: {focus}." if focus else ""
             closing=(f"Closing: masih perlu {fmt(remaining,metric)} {unit}. Bagi gap ke owner sesuai peluang, "
                      f"catat komitmen dan tanggal close, cek order pending setiap hari, lalu pastikan realisasi tercatat.{focus_text}")
