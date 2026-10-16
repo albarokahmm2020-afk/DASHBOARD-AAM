@@ -1759,8 +1759,8 @@ if main_section=="Program Push" and "_active_push_month" in dir() and not st.ses
             except Exception: _saved_start=None
             try: _saved_end=pd.to_datetime(_saved_end).date() if _saved_end else None
             except Exception: _saved_end=None
-            _range_start=_saved_start or _default_week_start
-            _range_end=_saved_end or _default_week_end
+            _range_start=_saved_start or _default_week_start or pd.Timestamp.today().date()
+            _range_end=_saved_end or _default_week_end or _range_start
             _date_range_key=f"pbm2_weekly_dates_{_active_push_month}_{key(_p).replace(' ','_')}_{int(_nweekly_week)}"
             _sync_config_widget(_date_range_key,(_range_start,_range_end) if _range_start and _range_end else None)
             _weekly_date_range=st.date_input("Rentang tanggal actual · dari — sampai",value=(_range_start,_range_end) if _range_start and _range_end else None,
