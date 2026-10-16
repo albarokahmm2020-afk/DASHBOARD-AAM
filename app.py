@@ -12,6 +12,8 @@ import requests
 import streamlit as st
 import altair as alt
 
+st.session_state["_drive_copy_button_counter"] = 0
+
 _streamlit_dataframe = st.dataframe
 _streamlit_data_editor = st.data_editor
 
@@ -816,7 +818,10 @@ def _download_button_with_drive_copy(*args,**kwargs):
     original_key=kwargs.get("key")
     caller=inspect.currentframe().f_back
     stable_key=str(original_key or f"{Path(caller.f_code.co_filename).name}_{caller.f_lineno}_{file_name}")
-    if st.button("Simpan salinan ke Google Drive",key="drive_copy_"+hashlib.sha1(stable_key.encode()).hexdigest()[:16]):
+    counter=st.session_state.get("_drive_copy_button_counter",0)+1
+    st.session_state["_drive_copy_button_counter"]=counter
+    drive_button_key="drive_copy_"+hashlib.sha1(f"{stable_key}_{counter}".encode()).hexdigest()[:16]
+    if st.button("Simpan salinan ke Google Drive",key=drive_button_key):
         try:
             _drive_upload_bytes(str(file_name),_as_download_bytes(payload),mime_type,"exports",ACTIVE_BRANCH_CODE)
             st.success(f"{file_name} disimpan di Google Drive → Dashboard_Exports/{ACTIVE_BRANCH_CODE}.")
