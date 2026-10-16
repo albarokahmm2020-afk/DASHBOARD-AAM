@@ -1688,7 +1688,7 @@ def load_program_targets():
 if _data_source_mode=="Google Drive · file bulanan":
     try:
         _account_fingerprint=hashlib.sha256(json.dumps(dict(_gcp_account),sort_keys=True).encode("utf-8")).hexdigest()
-        _monthly_files=_google_drive_monthly_files(_drive_folder_id,ACTIVE_BRANCH_CODE,_account_fingerprint)
+        _monthly_files=_google_drive_monthly_files(_drive_database_folder_id,ACTIVE_BRANCH_CODE,_account_fingerprint)
         _monthly_dir=APP_DIR/".remote_database"/"monthly"/ACTIVE_BRANCH_CODE
         _monthly_paths,_monthly_signature=_download_drive_monthly_files(_monthly_files,_monthly_dir,_gcp_account)
         if not _monthly_paths:
