@@ -2644,14 +2644,21 @@ def latest_daily_progress(scoped,metric):
 
 def summary_program_insight(scoped,program,selected,actual,target_value,achievement,deviation,title_detail):
     metric=selected["metric"]
-    if title_detail is None or title_detail.empty:
-        below_titles=pd.DataFrame()
-    else:
+    has_title_detail=(
+        title_detail is not None
+        and not title_detail.empty
+        and {"Sales Person Title","Target","Actual","Deviation"}.issubset(title_detail.columns)
+    )
+    if has_title_detail:
         target_values=pd.to_numeric(title_detail["Target"],errors="coerce").fillna(0)
         deviations=pd.to_numeric(title_detail["Deviation"],errors="coerce")
         below_titles=title_detail[(target_values>0)&(deviations<0)].copy()
         below_titles["_gap"]=pd.to_numeric(below_titles["Target"],errors="coerce").fillna(0)-pd.to_numeric(below_titles["Actual"],errors="coerce").fillna(0)
         below_titles=below_titles.sort_values("_gap",ascending=False)
+    else:
+        # Keep summary rendering resilient when title detail is unavailable or
+        # a target merge returns a frame without the expected title columns.
+        below_titles=pd.DataFrame(columns=["Sales Person Title","Target","Actual","Deviation","_gap"])
 
     if actual is None:
         return [("Prioritas eksekusi: periksa kelengkapan transaksi dan pemetaan Sales Person Title; actual belum dapat dihitung.",True),
@@ -2680,6 +2687,8 @@ def summary_program_insight(scoped,program,selected,actual,target_value,achievem
         tail=f"; lanjutkan ke {extra} title berikutnya sesuai gap" if extra else ""
         improvement="Prioritas perbaikan: " + " ".join(actions) + tail
         parts=[(improvement,True)]
+    elif not has_title_detail:
+        parts=[("Detail Sales Person Title belum tersedia untuk filter ini; periksa kolom Sales Person Title dan target per title.",False)]
     else:
         parts=[("Prioritas perbaikan: semua Sales Person Title bertarget sudah mencapai target; jaga follow-up peluang yang siap order.",False)]
 
