@@ -2199,7 +2199,7 @@ def weekly_program_performance(scoped,metric,selected,calendar_path):
     """Return title/program actuals for the current company week and weeks in scope."""
     calendar=read_file(calendar_path) if calendar_path and Path(calendar_path).exists() else None
     if calendar is None or calendar.empty:
-        return {},None,0,""
+        calendar=pd.DataFrame({"DATE":pd.date_range(pd.Timestamp(selected.get("weekly_start_date") or pd.Timestamp.today()).normalize(),pd.Timestamp(selected.get("weekly_end_date") or selected.get("weekly_start_date") or pd.Timestamp.today()).normalize()),"WEEK":int(selected.get("weekly_week") or 1),"YEARID":pd.Timestamp(selected.get("weekly_start_date") or pd.Timestamp.today()).year})
     date_key=next((c for c in calendar.columns if key(c)=="date"),None)
     week_col=next((c for c in calendar.columns if key(c)=="week"),None)
     year_col=next((c for c in calendar.columns if key(c) in {"yearid","year"}),None)
