@@ -1286,32 +1286,25 @@ with st.sidebar:
         _drive_configured=bool(_drive_source_id and _gcp_account)
     except Exception:
         _drive_settings={}; _gcp_account={}; _drive_configured=False
-    _source_modes=("Google Drive · file bulanan","Google Drive · workbook lama","Lokal / unggah") if _drive_configured else ("Lokal / unggah",)
-    _data_source_mode=st.radio(
-        "Sumber database",_source_modes,
-        index=0 if _drive_configured else 0,
-        key="dashboard_database_source_v2",
-        help="Gunakan file CSV per bulan dan cabang di Google Drive. Workbook lama tetap tersedia sebagai pilihan cadangan."
-    )
+    # Online always reads one shared Excel workbook so updates stay in a single Drive file.
+    _data_source_mode="Google Drive · workbook bersama" if _drive_configured else "Lokal / unggah"
     source=None
     _drive_database_path=None
     if _data_source_mode.startswith("Google Drive"):
-        if _data_source_mode=="Google Drive · file bulanan":
-            st.caption(f"Mengambil file bulanan untuk {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}); hanya file yang berubah yang diunduh ulang.")
-        else:
-            st.caption("Sumber cadangan: workbook Excel bersama dengan sheet cabang.")
+        st.caption("Sumber database: database_push_branches.xlsx di Google Drive.")
+        st.caption(f"Mengambil workbook Excel bersama untuk {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}); perubahan pada file yang sama akan dibaca ulang.")
         _drive_database_path=APP_DIR/".remote_database"/"database_push.xlsx"
         if st.button("↻ Periksa pembaruan dari Drive",key="refresh_drive_database",width="stretch"):
             st.cache_data.clear()
             st.cache_resource.clear()
             st.rerun()
     else:
-        source=st.file_uploader("Ganti database untuk sesi ini (opsional)",type=["xlsx","xls","csv"],key="db")
+        source=st.file_uploader("Ganti database untuk sesi ini (opsional)",type=["xlsx","xls"],key="db")
     if default_db.exists():
         st.caption(f"Cabang aktif: {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}). Workbook dapat berisi sheet BDG, PTK, dan MDN; dashboard hanya membaca sheet cabang aktif.")
     else:
         st.caption("Letakkan database_push.xlsx di folder aplikasi, atau unggah file di sini.")
-    if st.button("↻ Refresh database",width="stretch"):
+    if not _drive_configured and st.button("↻ Refresh database",width="stretch"):
         st.cache_data.clear()
         st.cache_resource.clear()
         st.session_state.pop("_base_filter_option_cache",None)
@@ -1381,10 +1374,13 @@ def _google_drive_metadata(source_id, account_fingerprint, is_folder=False):
         excel_files=[item for item in files if str(item.get("name","")).lower().endswith((".xlsx",".xls"))]
         if not excel_files:
             raise FileNotFoundError("Tidak ada file Excel (.xlsx/.xls) di folder Google Drive tersebut.")
-        return next((item for item in excel_files if item.get("name","").lower()=="database_push.xlsx"),excel_files[0])
+        return next(
+            (item for item in excel_files if item.get("name","").lower()=="database_push_branches.xlsx"),
+            next((item for item in excel_files if item.get("name","").lower()=="database_push.xlsx"),excel_files[0]),
+        )
     response=session.get(
         f"https://www.googleapis.com/drive/v3/files/{source_id}",
-        params={"fields":"id,name,mimeType,size,modifiedTime"},timeout=30,
+        params={"fields":"id,name,mimeType,size,modifiedTime","supportsAllDrives":"true"},timeout=30,
     )
     response.raise_for_status()
     return response.json()
@@ -1445,7 +1441,10 @@ def _download_drive_monthly_files(files, destination, service_account_info):
         version=f"{item.get('modifiedTime','')}:{item.get('size','')}"
         marker=local_path.with_suffix(local_path.suffix+".version")
         if not (local_path.exists() and marker.exists() and marker.read_text(encoding="utf-8")==version):
-            response=session.get(f"https://www.googleapis.com/drive/v3/files/{item['id']}?alt=media",timeout=(30,900))
+            response=session.get(
+                f"https://www.googleapis.com/drive/v3/files/{item['id']}",
+                params={"alt":"media","supportsAllDrives":"true"},timeout=(30,900),
+            )
             response.raise_for_status()
             payload=response.content
             if not payload.startswith((b"\xef\xbb\xbf",b"Product Group",b"\"Product Group")):
@@ -1497,11 +1496,18 @@ def _google_drive_database_path(source_id, destination, service_account_info, is
         metadata_url=f"https://www.googleapis.com/drive/v3/files/{file_id}"
         if metadata.get("mimeType")=="application/vnd.google-apps.spreadsheet":
             raise ValueError("File di Drive berupa Google Sheets. Simpan/unggah database sebagai Excel (.xlsx) agar seluruh data besar dapat dibaca tanpa batas sel spreadsheet.")
-        version=f"{metadata.get('modifiedTime','')}:{metadata.get('size','')}"
+        version=f"{file_id}:{metadata.get('modifiedTime','')}:{metadata.get('size','')}"
         marker=destination.with_suffix(destination.suffix+".version")
         if destination.exists() and marker.exists() and marker.read_text(encoding="utf-8")==version:
             return destination
-        response=session.get(f"{metadata_url}?alt=media",timeout=(30,900))
+        response=session.get(
+            metadata_url,params={"alt":"media","supportsAllDrives":"true"},timeout=(30,900)
+        )
+        if response.status_code==403:
+            raise PermissionError(
+                "Google Drive menolak akses ke workbook database. Pastikan file database_push_branches.xlsx "
+                "dibagikan kepada service account dashboard dengan akses Viewer, lalu klik 'Periksa pembaruan dari Drive'."
+            )
         response.raise_for_status()
         content=response.content
         if not content.startswith(b"PK"):
@@ -1664,25 +1670,7 @@ def load_program_targets():
                 pieces.append(fallback)
     return pd.concat(pieces,ignore_index=True,sort=False) if pieces else base
 
-if _data_source_mode=="Google Drive · file bulanan":
-    try:
-        _account_fingerprint=hashlib.sha256(json.dumps(dict(_gcp_account),sort_keys=True).encode("utf-8")).hexdigest()
-        _monthly_files=_google_drive_monthly_files(_drive_database_folder_id,ACTIVE_BRANCH_CODE,_account_fingerprint)
-        _monthly_dir=APP_DIR/".remote_database"/"monthly"/ACTIVE_BRANCH_CODE
-        _monthly_paths,_monthly_signature=_download_drive_monthly_files(_monthly_files,_monthly_dir,_gcp_account)
-        if not _monthly_paths:
-            st.error(f"Belum ada file bulanan untuk cabang {ACTIVE_BRANCH_CODE} di Google Drive.")
-            df=None
-        else:
-            df=read_normalized_monthly_branch(ACTIVE_BRANCH_CODE,tuple(_monthly_paths),_monthly_signature)
-            if df.empty:
-                st.warning(f"Folder {ACTIVE_BRANCH_CODE} sudah berisi file template, tetapi belum ada transaksi. Unggah data bulanan cabang ini ke Drive.")
-                st.stop()
-    except Exception as _drive_error:
-        st.error(f"Tidak dapat membaca file bulanan dari Google Drive: {_drive_error}")
-        df=None
-    _default_database=None
-elif _data_source_mode=="Google Drive · workbook lama":
+if _data_source_mode.startswith("Google Drive"):
     try:
         _default_database=_google_drive_database_path(
             _drive_source_id,
@@ -1697,15 +1685,12 @@ elif source is None:
     _default_database=APP_DIR/"database_push.xlsx"
 elif source is not None:
     _default_database=None
-if source is None and _data_source_mode!="Google Drive · file bulanan":
+if source is None:
     if _default_database is not None and _default_database.exists():
         _db_stat=_default_database.stat()
         try:
-            if _default_database.suffix.lower()==".csv":
-                _branch_sheet=0
-            else:
-                _default_sheets=pd.ExcelFile(_default_database).sheet_names
-                _branch_sheet=resolve_branch_sheet(_default_sheets,ACTIVE_BRANCH_CODE)
+            _default_sheets=pd.ExcelFile(_default_database).sheet_names
+            _branch_sheet=resolve_branch_sheet(_default_sheets,ACTIVE_BRANCH_CODE)
             if _branch_sheet is None:
                 st.error(f"Sheet untuk cabang {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}) belum ada di {_default_database.name}. Tambahkan sheet dengan nama {ACTIVE_BRANCH_CODE}.")
                 df=None
@@ -1719,9 +1704,7 @@ if source is None and _data_source_mode!="Google Drive · file bulanan":
 elif source is not None:
     try:
         _uploaded_sheet=uploaded_branch_sheet(source,ACTIVE_BRANCH_CODE)
-        if source.name.lower().endswith(".csv"):
-            df=read_normalized_dashboard_upload(source.name,source.getvalue(),0)
-        elif _uploaded_sheet is None:
+        if _uploaded_sheet is None:
             _available_sheets=pd.ExcelFile(io.BytesIO(source.getvalue())).sheet_names
             st.error(f"Sheet cabang {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}) tidak ditemukan. Sheet yang tersedia: {', '.join(_available_sheets)}. Tambahkan sheet {ACTIVE_BRANCH_CODE} ke workbook.")
             df=None
@@ -1732,7 +1715,10 @@ elif source is not None:
         df=None
 target=load_program_targets()
 if df is None:
-    st.info("Unggah database transaksi dari sidebar untuk melihat dashboard. Anda dapat menyiapkan target melalui template CSV terlebih dahulu.")
+    if _drive_configured:
+        st.info("Database belum dapat dimuat dari Google Drive. Pastikan workbook bersama dapat diakses oleh service account dashboard, lalu klik 'Periksa pembaruan dari Drive'.")
+    else:
+        st.info("Unggah workbook Excel transaksi dari sidebar untuk melihat dashboard. Target dapat disiapkan terpisah melalui template sasaran.")
     st.stop()
 
 def target_preview_for_config(program,params,metric):
