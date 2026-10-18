@@ -1401,9 +1401,12 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
     """Find the active branch's monthly files under database_monthly_split."""
     from google.oauth2.service_account import Credentials
     from google.auth.transport.requests import AuthorizedSession
+    import csv
+    import uuid
+    from openpyxl import Workbook
     service_account_info=dict(st.secrets["gcp_service_account"])
     credentials=Credentials.from_service_account_info(
-        service_account_info,scopes=["https://www.googleapis.com/auth/drive.readonly"]
+        service_account_info,scopes=["https://www.googleapis.com/auth/drive"]
     )
     session=AuthorizedSession(credentials)
     def children(parent_id):
@@ -1429,15 +1432,70 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
     if not branch_folder:
         raise FileNotFoundError(f"Folder cabang {branch_code} belum ditemukan di database_monthly_split.")
     files=children(branch_folder["id"])
-    # The editable Excel workbook is the single source of truth. Ignore CSV
-    # mirrors so users only need to maintain one file per month.
-    monthly_by_period={}
+    candidates={}
     for item in files:
         name=str(item.get("name",""))
         upper_name=name.upper()
-        if upper_name.startswith(f"DATABASE_PUSH_{branch_code}_") and name.lower().endswith(".xlsx"):
+        if not upper_name.startswith(f"DATABASE_PUSH_{branch_code}_"):
+            continue
+        suffix=Path(name).suffix.lower()
+        if suffix in (".xlsx",".csv"):
             period=Path(name).stem.upper().replace(f"DATABASE_PUSH_{branch_code}_", "")
-            monthly_by_period[period]=item
+            candidates.setdefault(period,{})[suffix]=item
+
+    # Migrate CSV months to Excel in place before removing their CSV copies.
+    # Stream rows into a write-only workbook so large monthly files stay within
+    # Streamlit Cloud's memory limit.
+    monthly_by_period={}
+    for period,by_type in candidates.items():
+        xlsx_item=by_type.get(".xlsx")
+        csv_item=by_type.get(".csv")
+        if csv_item:
+            should_convert=(xlsx_item is None or str(csv_item.get("modifiedTime",""))>str(xlsx_item.get("modifiedTime","")))
+            if should_convert:
+                downloaded=session.get(
+                    f"https://www.googleapis.com/drive/v3/files/{csv_item['id']}",
+                    params={"alt":"media","supportsAllDrives":"true"},timeout=(30,900),
+                )
+                downloaded.raise_for_status()
+                raw=downloaded.content
+                try: csv_text=raw.decode("utf-8-sig")
+                except UnicodeDecodeError: csv_text=raw.decode("cp1252")
+                try: dialect=csv.Sniffer().sniff(csv_text[:8192],delimiters=",;\t|")
+                except csv.Error: dialect=csv.excel
+                workbook=Workbook(write_only=True)
+                sheet=workbook.create_sheet("Database")
+                for row in csv.reader(io.StringIO(csv_text),dialect): sheet.append(row)
+                temp_xlsx=APP_DIR/".remote_database"/f"migrate_{branch_code}_{period}_{uuid.uuid4().hex}.xlsx"
+                temp_xlsx.parent.mkdir(parents=True,exist_ok=True)
+                workbook.save(temp_xlsx)
+                payload=temp_xlsx.read_bytes(); temp_xlsx.unlink(missing_ok=True)
+                mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                if xlsx_item:
+                    response=session.patch(
+                        f"https://www.googleapis.com/upload/drive/v3/files/{xlsx_item['id']}",
+                        params={"uploadType":"media","supportsAllDrives":"true","fields":"id,name,size,modifiedTime"},
+                        data=payload,headers={"Content-Type":mime_type},timeout=(30,900),
+                    )
+                else:
+                    boundary="dashboard_"+uuid.uuid4().hex
+                    metadata=json.dumps({"name":Path(csv_item["name"]).with_suffix(".xlsx").name,"mimeType":mime_type,"parents":[branch_folder["id"]]},ensure_ascii=False)
+                    body=(f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata}\r\n"
+                          f"--{boundary}\r\nContent-Type: {mime_type}\r\n\r\n").encode("utf-8")+payload+f"\r\n--{boundary}--".encode("utf-8")
+                    response=session.post(
+                        "https://www.googleapis.com/upload/drive/v3/files",
+                        params={"uploadType":"multipart","supportsAllDrives":"true","fields":"id,name,size,modifiedTime"},
+                        data=body,headers={"Content-Type":f"multipart/related; boundary={boundary}"},timeout=(30,900),
+                    )
+                response.raise_for_status(); xlsx_item=response.json()
+            if xlsx_item:
+                trash=session.patch(
+                    f"https://www.googleapis.com/drive/v3/files/{csv_item['id']}",
+                    params={"supportsAllDrives":"true","fields":"id,trashed"},json={"trashed":True},timeout=30,
+                )
+                trash.raise_for_status()
+        if xlsx_item:
+            monthly_by_period[period]=xlsx_item
     return sorted(monthly_by_period.values(),key=lambda item:item.get("name",""))
 
 def _download_drive_monthly_files(files, destination, service_account_info):
