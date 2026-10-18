@@ -6089,6 +6089,40 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
             fc_title=workbook_col(fixed_call_data,"POSITION_DESC")
             fc_customer=workbook_col(fixed_call_data,"CUSTOMER_NAME")
             fc_frequency=workbook_col(fixed_call_data,"FREQUENCY")
+            if all([calendar_day_col,calendar_week_col,calendar_year_col,calendar_month_col,fc_year,fc_week,fc_day]):
+                scheduled_keys=set()
+                _schedule_columns=[fc_year,fc_week,fc_day]
+                if fc_quarter: _schedule_columns.append(fc_quarter)
+                if fc_branch: _schedule_columns.append(fc_branch)
+                _schedule_rows=fixed_call_data[_schedule_columns].dropna(subset=[fc_year,fc_week,fc_day]).drop_duplicates()
+                for _,_schedule_row in _schedule_rows.iterrows():
+                    try: _schedule_year=int(float(_schedule_row[fc_year])); _schedule_week=int(float(_schedule_row[fc_week]))
+                    except (TypeError,ValueError): continue
+                    _schedule_day=" ".join(str(_schedule_row[fc_day]).strip().upper().split())
+                    _schedule_quarter=str(_schedule_row[fc_quarter]).strip().upper() if fc_quarter else ""
+                    _schedule_branch=str(_schedule_row[fc_branch]).strip().upper() if fc_branch else ACTIVE_BRANCH_CODE
+                    if _schedule_branch==ACTIVE_BRANCH_CODE:
+                        scheduled_keys.add((_schedule_year,_schedule_week,_schedule_day,_schedule_quarter))
+                _scheduled_dates=[]
+                for _date_value in date_options:
+                    _calendar_rows=calendar_data.loc[parsed_dates.dt.normalize()==_date_value]
+                    if _calendar_rows.empty: continue
+                    _calendar_date_row=_calendar_rows.iloc[0]
+                    try:
+                        _calendar_year=int(float(_calendar_date_row[calendar_year_col]))
+                        _calendar_week=int(float(_calendar_date_row[calendar_week_col]))
+                        _calendar_month=int(float(_calendar_date_row[calendar_month_col]))
+                    except (TypeError,ValueError): continue
+                    _calendar_day=" ".join(str(_calendar_date_row[calendar_day_col]).strip().upper().split())
+                    _calendar_quarter=f"Q{(_calendar_month-1)//3+1}" if fc_quarter else ""
+                    if (_calendar_year,_calendar_week,_calendar_day,_calendar_quarter) in scheduled_keys:
+                        _scheduled_dates.append(_date_value)
+                if _scheduled_dates and default_date not in _scheduled_dates:
+                    _upcoming_dates=[_date_value for _date_value in _scheduled_dates if _date_value>=running_date]
+                    default_date=_upcoming_dates[0] if _upcoming_dates else _scheduled_dates[-1]
+                    _saved_daily_date=st.session_state.get("daily_visit_date")
+                    if _saved_daily_date is not None and pd.Timestamp(_saved_daily_date).normalize() not in _scheduled_dates:
+                        st.session_state["daily_visit_date"]=default_date
             filter_cols=st.columns(2)
             with filter_cols[1]:
                 selected_date=st.selectbox("Tanggal",date_options,index=date_options.index(default_date),format_func=lambda value:pd.Timestamp(value).strftime("%d %b %Y"),key="daily_visit_date")
@@ -6120,7 +6154,7 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                 if fc_quarter:
                     daily=daily[daily[fc_quarter].astype(str).str.strip().str.upper().eq(quarter)]
                 if fc_branch:
-                    daily=daily[daily[fc_branch].astype(str).str.strip().str.upper().eq("BDG")]
+                    daily=daily[daily[fc_branch].astype(str).str.strip().str.upper().eq(ACTIVE_BRANCH_CODE)]
                 if selected_daily_titles:
                     daily=daily[daily[fc_title].astype(str).str.strip().isin(selected_daily_titles)]
                 if visit_titles:
