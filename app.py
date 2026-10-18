@@ -1429,24 +1429,14 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
     if not branch_folder:
         raise FileNotFoundError(f"Folder cabang {branch_code} belum ditemukan di database_monthly_split.")
     files=children(branch_folder["id"])
-    candidates={}
+    # The editable Excel workbook is the single source of truth. Ignore CSV
+    # mirrors so users only need to maintain one file per month.
+    monthly_by_period={}
     for item in files:
         name=str(item.get("name",""))
         upper_name=name.upper()
-        if upper_name.startswith(f"DATABASE_PUSH_{branch_code}_") and name.lower().endswith((".xlsx", ".csv")):
+        if upper_name.startswith(f"DATABASE_PUSH_{branch_code}_") and name.lower().endswith(".xlsx"):
             period=Path(name).stem.upper().replace(f"DATABASE_PUSH_{branch_code}_", "")
-            candidates.setdefault(period,{})[Path(name).suffix.lower()]=item
-    # Read legacy months from their fast CSV copies and only open the current
-    # month's editable Excel workbook. Loading dozens of large XLSX files on
-    # Streamlit Cloud kept new sessions stuck on the loading screen.
-    periods=sorted(candidates)
-    current_period=periods[-1] if periods else None
-    monthly_by_period={}
-    for period,by_extension in candidates.items():
-        preferred=".xlsx" if period==current_period else ".csv"
-        fallback=".csv" if preferred==".xlsx" else ".xlsx"
-        item=by_extension.get(preferred) or by_extension.get(fallback)
-        if item:
             monthly_by_period[period]=item
     return sorted(monthly_by_period.values(),key=lambda item:item.get("name",""))
 
@@ -1454,6 +1444,7 @@ def _download_drive_monthly_files(files, destination, service_account_info):
     """Download changed month files one at a time and keep a local reusable copy."""
     from google.oauth2.service_account import Credentials
     from google.auth.transport.requests import AuthorizedSession
+    import uuid
     credentials=Credentials.from_service_account_info(
         dict(service_account_info),scopes=["https://www.googleapis.com/auth/drive.readonly"]
     )
@@ -1477,8 +1468,9 @@ def _download_drive_monthly_files(files, destination, service_account_info):
                 raise ValueError(f"File {name} bukan workbook Excel yang valid atau belum selesai diunggah.")
             if not is_xlsx and not payload.startswith((b"\xef\xbb\xbf",b"Product Group",b"\"Product Group")):
                 raise ValueError(f"File {name} bukan spreadsheet/CSV yang valid atau belum selesai diunggah.")
-            temporary=local_path.with_suffix(local_path.suffix+".tmp")
-            temporary.write_bytes(payload); temporary.replace(local_path)
+            destination.mkdir(parents=True,exist_ok=True)
+            temporary=local_path.with_name(local_path.name+f".{os.getpid()}.{uuid.uuid4().hex}.tmp")
+            temporary.write_bytes(payload); os.replace(temporary,local_path)
             marker.write_text(version,encoding="utf-8")
         paths.append(str(local_path))
         signatures.append(f"{name}:{version}")
@@ -1495,27 +1487,21 @@ def read_normalized_monthly_branch(branch_code, paths, signature):
         try: return pd.read_parquet(parquet_path)
         except Exception: parquet_path.unlink(missing_ok=True)
 
-    # Find text columns and their shared categories in a low-memory first pass.
-    csv_paths=[Path(path) for path in paths if Path(path).suffix.lower()==".csv"]
+    # Build shared categories from the Excel files using only text columns.
     text_columns=[]; categories={}
-    if csv_paths:
-        sample=pd.read_csv(csv_paths[0],nrows=1000,low_memory=False)
+    excel_paths=[Path(path) for path in paths if Path(path).suffix.lower()==".xlsx"]
+    if excel_paths:
+        sample=pd.read_excel(excel_paths[0],engine="openpyxl",nrows=1000)
         dimension_names={key(alias) for kind,aliases in ALIASES.items() if kind!="sales" for alias in aliases}
         text_columns=[name for name in sample.columns if not pd.api.types.is_numeric_dtype(sample[name].dtype) or key(name) in dimension_names]
         del sample
         categories={name:set() for name in text_columns}
-        for path in csv_paths:
-            for chunk in pd.read_csv(path,usecols=lambda name:name in categories,dtype="string",chunksize=50000,low_memory=False):
-                for name in text_columns:
-                    if name in chunk:
-                        categories[name].update(chunk[name].dropna().str.strip().unique().tolist())
-        for path in paths:
-            if Path(path).suffix.lower()==".xlsx":
-                excel_dims=pd.read_excel(path,engine="openpyxl",usecols=lambda name:name in categories)
-                for name in text_columns:
-                    if name in excel_dims:
-                        categories[name].update(excel_dims[name].dropna().astype("string").str.strip().unique().tolist())
-                del excel_dims
+        for path in excel_paths:
+            dimension_data=pd.read_excel(path,engine="openpyxl",usecols=lambda name:name in categories)
+            for name in text_columns:
+                if name in dimension_data:
+                    categories[name].update(dimension_data[name].dropna().astype("string").str.strip().unique().tolist())
+            del dimension_data
     shared_dtypes={name:pd.CategoricalDtype(categories=sorted(values)) for name,values in categories.items()}
 
     pieces=[]
@@ -1525,7 +1511,7 @@ def read_normalized_monthly_branch(branch_code, paths, signature):
             for name,dtype in shared_dtypes.items():
                 if name in piece: piece[name]=piece[name].astype("string").str.strip().astype(dtype)
         else:
-            piece=pd.read_csv(path,low_memory=False,dtype=shared_dtypes)
+            raise ValueError(f"Database bulanan harus berupa file Excel (.xlsx): {Path(path).name}")
         if not piece.empty: pieces.append(piece)
     if not pieces:
         return pd.DataFrame()
