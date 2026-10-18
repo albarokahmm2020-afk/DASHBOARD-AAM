@@ -6025,8 +6025,8 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
     with daily_filter_cols[2]:
         visit_titles=filter_select(df,"salesperson","Sales Person Title","daily_visit_title_filter")
     if not visit_titles:
-        st.info("Pilih Sales Person Title untuk menampilkan sasaran kunjungan harian.")
-        st.stop()
+        visit_titles=filter_options(df,"salesperson")
+        st.caption("Belum memilih Sales Person Title: semua salesperson ditampilkan. Gunakan filter di atas untuk mempersempit daftar.")
     def _daily_selected_values(value):
         if value in (None,"All","ALL",""): return []
         return list(value) if isinstance(value,(list,tuple,set)) else [value]
