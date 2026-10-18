@@ -806,29 +806,8 @@ def _as_download_bytes(data):
         return payload
     return bytes(data)
 
-_original_download_button=st.download_button
-def _download_button_with_drive_copy(*args,**kwargs):
-    result=_original_download_button(*args,**kwargs)
-    if not st.secrets.get("gcp_service_account"):
-        return result
-    positional=list(args)
-    file_name=kwargs.get("file_name") or (positional[2] if len(positional)>2 else "export.bin")
-    payload=kwargs.get("data", positional[1] if len(positional)>1 else b"")
-    mime_type=kwargs.get("mime", positional[3] if len(positional)>3 else "application/octet-stream")
-    original_key=kwargs.get("key")
-    caller=inspect.currentframe().f_back
-    stable_key=str(original_key or f"{Path(caller.f_code.co_filename).name}_{caller.f_lineno}_{file_name}")
-    counter=st.session_state.get("_drive_copy_button_counter",0)+1
-    st.session_state["_drive_copy_button_counter"]=counter
-    drive_button_key="drive_copy_"+hashlib.sha1(f"{stable_key}_{counter}".encode()).hexdigest()[:16]
-    if st.button("Simpan salinan ke Google Drive",key=drive_button_key):
-        try:
-            _drive_upload_bytes(str(file_name),_as_download_bytes(payload),mime_type,"exports",ACTIVE_BRANCH_CODE)
-            st.success(f"{file_name} disimpan di Google Drive → Dashboard_Exports/{ACTIVE_BRANCH_CODE}.")
-        except Exception as exc:
-            st.error(f"Gagal menyimpan ke Google Drive: {exc}")
-    return result
-st.download_button=_download_button_with_drive_copy
+# Export controls stay as one download action. Operational data and
+# configuration are synchronized automatically through their own save paths.
 
 def _reset_branch_session():
     _keep={"active_branch_code","db"}
