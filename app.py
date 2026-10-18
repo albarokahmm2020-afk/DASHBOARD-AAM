@@ -1300,7 +1300,9 @@ with st.sidebar:
             st.rerun()
     else:
         source=st.file_uploader("Ganti database untuk sesi ini (opsional)",type=["xlsx","xls"],key="db")
-    if default_db.exists():
+    if _drive_configured:
+        st.caption(f"Cabang aktif: {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}). Data dibaca dari sheet cabang pada workbook bersama.")
+    elif default_db.exists():
         st.caption(f"Cabang aktif: {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}). Workbook dapat berisi sheet BDG, PTK, dan MDN; dashboard hanya membaca sheet cabang aktif.")
     else:
         st.caption("Letakkan database_push.xlsx di folder aplikasi, atau unggah file di sini.")
