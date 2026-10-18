@@ -898,7 +898,12 @@ def normalize(df,copy=True):
         df=df.copy()
     for kind in ALIASES:
         c=col(df,kind)
-        if c and kind != "sales": df[c]=df[c].astype("string").str.strip()
+        if c and kind != "sales":
+            if isinstance(df[c].dtype,pd.CategoricalDtype):
+                clean=df[c].cat.categories.astype("string").str.strip()
+                df[c]=df[c].cat.rename_categories(clean)
+            else:
+                df[c]=df[c].astype("string").str.strip()
     return df
 def month_label(value):
     try:
@@ -1479,9 +1484,9 @@ def _download_drive_monthly_files(files, destination, service_account_info):
         signatures.append(f"{name}:{version}")
     return paths,"|".join(signatures)
 
-@st.cache_resource(show_spinner="Menyiapkan data transaksi cabang…")
+@st.cache_resource(max_entries=1,show_spinner="Menyiapkan data transaksi cabang…")
 def read_normalized_monthly_branch(branch_code, paths, signature):
-    """Combine monthly spreadsheets and persist a Parquet cache per version."""
+    """Load monthly files with shared categorical columns to stay within Cloud memory."""
     cache_dir=APP_DIR/".remote_database"/"normalized"
     cache_dir.mkdir(parents=True,exist_ok=True)
     fingerprint=hashlib.sha256(signature.encode("utf-8")).hexdigest()[:20]
@@ -1489,16 +1494,47 @@ def read_normalized_monthly_branch(branch_code, paths, signature):
     if parquet_path.exists():
         try: return pd.read_parquet(parquet_path)
         except Exception: parquet_path.unlink(missing_ok=True)
+
+    # Find text columns and their shared categories in a low-memory first pass.
+    csv_paths=[Path(path) for path in paths if Path(path).suffix.lower()==".csv"]
+    text_columns=[]; categories={}
+    if csv_paths:
+        sample=pd.read_csv(csv_paths[0],nrows=1000,low_memory=False)
+        dimension_names={key(alias) for kind,aliases in ALIASES.items() if kind!="sales" for alias in aliases}
+        text_columns=[name for name in sample.columns if not pd.api.types.is_numeric_dtype(sample[name].dtype) or key(name) in dimension_names]
+        del sample
+        categories={name:set() for name in text_columns}
+        for path in csv_paths:
+            for chunk in pd.read_csv(path,usecols=lambda name:name in categories,dtype="string",chunksize=50000,low_memory=False):
+                for name in text_columns:
+                    if name in chunk:
+                        categories[name].update(chunk[name].dropna().str.strip().unique().tolist())
+        for path in paths:
+            if Path(path).suffix.lower()==".xlsx":
+                excel_dims=pd.read_excel(path,engine="openpyxl",usecols=lambda name:name in categories)
+                for name in text_columns:
+                    if name in excel_dims:
+                        categories[name].update(excel_dims[name].dropna().astype("string").str.strip().unique().tolist())
+                del excel_dims
+    shared_dtypes={name:pd.CategoricalDtype(categories=sorted(values)) for name,values in categories.items()}
+
     pieces=[]
     for path in paths:
         if Path(path).suffix.lower()==".xlsx":
             piece=pd.read_excel(path,engine="openpyxl")
+            for name,dtype in shared_dtypes.items():
+                if name in piece: piece[name]=piece[name].astype("string").str.strip().astype(dtype)
         else:
-            piece=pd.read_csv(path,low_memory=False)
+            piece=pd.read_csv(path,low_memory=False,dtype=shared_dtypes)
         if not piece.empty: pieces.append(piece)
     if not pieces:
         return pd.DataFrame()
     normalized=normalize(pd.concat(pieces,ignore_index=True,sort=False),copy=False)
+    # Keep normalized text as categorical; expanding it to a Python string per row
+    # was the main cause of Streamlit Cloud exceeding its memory limit.
+    for name in text_columns:
+        if name in normalized and not isinstance(normalized[name].dtype,pd.CategoricalDtype):
+            normalized[name]=normalized[name].astype("category")
     temporary=parquet_path.with_suffix(".parquet.tmp")
     try:
         normalized.to_parquet(temporary,index=False); temporary.replace(parquet_path)
