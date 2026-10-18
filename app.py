@@ -1296,8 +1296,11 @@ with st.sidebar:
         st.caption("Untuk update harian, buka file bulan berjalan di folder database_monthly_split, tambahkan/perbarui data, lalu gunakan tombol periksa pembaruan.")
         _drive_database_path=APP_DIR/".remote_database"/"database_push.xlsx"
         if st.button("↻ Periksa pembaruan dari Drive",key="refresh_drive_database",width="stretch"):
+            # Refresh Drive metadata/listing only. The normalized DataFrame cache is
+            # keyed by each file's modifiedTime and size, so a changed workbook
+            # naturally gets a new cache key. Clearing all resource caches here
+            # duplicates large branch data in memory and can crash Streamlit Cloud.
             st.cache_data.clear()
-            st.cache_resource.clear()
             st.rerun()
     else:
         source=st.file_uploader("Ganti database untuk sesi ini (opsional)",type=["xlsx","xls"],key="db")
