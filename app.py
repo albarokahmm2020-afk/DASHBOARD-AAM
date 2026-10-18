@@ -1421,15 +1421,25 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
     if not branch_folder:
         raise FileNotFoundError(f"Folder cabang {branch_code} belum ditemukan di database_monthly_split.")
     files=children(branch_folder["id"])
-    monthly_by_period={}
+    candidates={}
     for item in files:
         name=str(item.get("name",""))
         upper_name=name.upper()
         if upper_name.startswith(f"DATABASE_PUSH_{branch_code}_") and name.lower().endswith((".xlsx", ".csv")):
             period=Path(name).stem.upper().replace(f"DATABASE_PUSH_{branch_code}_", "")
-            existing=monthly_by_period.get(period)
-            if existing is None or (name.lower().endswith(".xlsx") and not str(existing.get("name", "")).lower().endswith(".xlsx")):
-                monthly_by_period[period]=item
+            candidates.setdefault(period,{})[Path(name).suffix.lower()]=item
+    # Read legacy months from their fast CSV copies and only open the current
+    # month's editable Excel workbook. Loading dozens of large XLSX files on
+    # Streamlit Cloud kept new sessions stuck on the loading screen.
+    periods=sorted(candidates)
+    current_period=periods[-1] if periods else None
+    monthly_by_period={}
+    for period,by_extension in candidates.items():
+        preferred=".xlsx" if period==current_period else ".csv"
+        fallback=".csv" if preferred==".xlsx" else ".xlsx"
+        item=by_extension.get(preferred) or by_extension.get(fallback)
+        if item:
+            monthly_by_period[period]=item
     return sorted(monthly_by_period.values(),key=lambda item:item.get("name",""))
 
 def _download_drive_monthly_files(files, destination, service_account_info):
