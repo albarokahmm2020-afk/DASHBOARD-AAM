@@ -1549,9 +1549,8 @@ def uploaded_branch_sheet(uploaded_file,branch_code):
 
 @st.cache_resource(show_spinner="Menyiapkan database transaksi…")
 def read_normalized_dashboard_file(path,modified_ns,file_size,sheet_name=0):
-    # Reuse a persistent Parquet cache across app restarts and keep the
-    # normalized frame in memory across reruns. This avoids reparsing the
-    # 163 MB workbook and repeatedly pickling/copying its ~470 MB frame.
+    # Read large Excel sheets in batches. Loading the whole workbook with
+    # pandas first can exceed the memory limit of the online Streamlit app.
     source_path=Path(path)
     _sheet_cache=key(sheet_name).replace(" ","_") if isinstance(sheet_name,str) else f"sheet_{sheet_name}"
     parquet_path=source_path.with_name(f".{source_path.stem}_{_sheet_cache}_dashboard_cache.parquet")
@@ -1563,22 +1562,74 @@ def read_normalized_dashboard_file(path,modified_ns,file_size,sheet_name=0):
                 return pd.read_parquet(parquet_path)
         except Exception:
             pass
-    # Reuse Streamlit's existing file cache if this server already read the
-    # workbook; otherwise it performs the initial Excel import only once.
-    raw=read_local_file(str(source_path),modified_ns,file_size,sheet_name)
-    normalized=normalize(raw,copy=False)
-    try:
+    if source_path.suffix.lower()!=".xlsx":
+        normalized=normalize(pd.read_excel(source_path,sheet_name=sheet_name),copy=False)
+    else:
+        from openpyxl import load_workbook
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        workbook=load_workbook(source_path,read_only=True,data_only=True)
+        writer=None
         temporary_parquet=parquet_path.with_name(parquet_path.name+".tmp")
+        try:
+            worksheet=workbook[sheet_name] if isinstance(sheet_name,str) else workbook.worksheets[int(sheet_name)]
+            rows=worksheet.iter_rows(values_only=True)
+            raw_headers=next(rows,None)
+            if raw_headers is None:
+                return pd.DataFrame()
+            headers=[]; counts={}
+            for index,value in enumerate(raw_headers):
+                base=str(value).strip() if value is not None else f"Unnamed: {index}"
+                count=counts.get(base,0); counts[base]=count+1
+                headers.append(base if count==0 else f"{base}.{count}")
+            sales_column=next((headers[i] for i in range(len(headers)) if key(headers[i]) in {key(alias) for alias in ALIASES["sales"]}),None)
+
+            def write_batch(batch):
+                nonlocal writer
+                if not batch:
+                    return
+                frame=normalize(pd.DataFrame.from_records(batch,columns=headers),copy=False)
+                actual_sales_column=col(frame,"sales")
+                for column in frame.columns:
+                    if column==actual_sales_column:
+                        frame[column]=pd.to_numeric(frame[column],errors="coerce").astype("float64")
+                    else:
+                        frame[column]=frame[column].astype("string")
+                table=pa.Table.from_pandas(frame,preserve_index=False)
+                if writer is None:
+                    writer=pq.ParquetWriter(temporary_parquet,table.schema)
+                writer.write_table(table)
+
+            batch=[]
+            for row in rows:
+                if not row or all(value is None for value in row):
+                    continue
+                batch.append(row)
+                if len(batch)>=50000:
+                    write_batch(batch)
+                    batch=[]
+            write_batch(batch)
+            if writer is not None:
+                writer.close(); writer=None
+            else:
+                empty=pd.DataFrame(columns=headers)
+                for column in empty.columns:
+                    empty[column]=empty[column].astype("float64" if column==sales_column else "string")
+                empty.to_parquet(temporary_parquet,index=False)
+            temporary_parquet.replace(parquet_path)
+        finally:
+            if writer is not None:
+                writer.close()
+            workbook.close()
+            temporary_parquet.unlink(missing_ok=True)
+        normalized=pd.read_parquet(parquet_path)
+    try:
         temporary_metadata=metadata_path.with_name(metadata_path.name+".tmp")
-        normalized.to_parquet(temporary_parquet,index=False)
-        temporary_parquet.replace(parquet_path)
         temporary_metadata.write_text(json.dumps(expected),encoding="utf-8")
         temporary_metadata.replace(metadata_path)
     except Exception:
-        for temporary in (locals().get("temporary_parquet"),locals().get("temporary_metadata")):
-            if temporary is not None:
-                try: Path(temporary).unlink(missing_ok=True)
-                except OSError: pass
+        try: temporary_metadata.unlink(missing_ok=True)
+        except OSError: pass
     return normalized
 
 @st.cache_resource(show_spinner="Menyiapkan database transaksi…")
