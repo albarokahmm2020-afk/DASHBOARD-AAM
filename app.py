@@ -1488,12 +1488,19 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
                         data=body,headers={"Content-Type":f"multipart/related; boundary={boundary}"},timeout=(30,900),
                     )
                 response.raise_for_status(); xlsx_item=response.json()
+            # Some Drive folders allow the service account to read and upload
+            # files but do not grant delete permission. CSV is never returned to
+            # the dashboard reader; a failed cleanup must not prevent loading
+            # the verified XLSX copy.
             if xlsx_item:
-                trash=session.patch(
-                    f"https://www.googleapis.com/drive/v3/files/{csv_item['id']}",
-                    params={"supportsAllDrives":"true","fields":"id,trashed"},json={"trashed":True},timeout=30,
-                )
-                trash.raise_for_status()
+                try:
+                    trash=session.patch(
+                        f"https://www.googleapis.com/drive/v3/files/{csv_item['id']}",
+                        params={"supportsAllDrives":"true","fields":"id,trashed"},json={"trashed":True},timeout=30,
+                    )
+                    trash.raise_for_status()
+                except Exception:
+                    pass
         if xlsx_item:
             monthly_by_period[period]=xlsx_item
     return sorted(monthly_by_period.values(),key=lambda item:item.get("name",""))
