@@ -4689,7 +4689,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
 </script>'''
             st.components.v1.html(markup,height=height,scrolling=False)
 
-        perf_view=st.radio("Sub menu Performance Sales",["Monitoring Sales","Toserba","Customer di Bawah Rata-rata"],horizontal=True,key="performance_view")
+        perf_view=st.radio("Sub menu Performance Sales",["Monitoring Sales","Toserba","Customer di Bawah Rata-rata","Detail Customer"],horizontal=True,key="performance_view")
         if perf_view=="Monitoring Sales":
             st.markdown(f"#### {month_name} {int(selected_year)}")
             top=st.columns(4,gap="small")
@@ -5235,6 +5235,127 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     mime="text/csv",key="export_toserba",
                 )
 
+        elif perf_view=="Detail Customer":
+            st.markdown("#### Detail Customer · Perbandingan Sales")
+            detail_product_col=col(perf,"product")
+            detail_customer_col=col(perf,"customer")
+            if not detail_product_col or not detail_customer_col:
+                missing_detail=[label for label,column in [("Product Description",detail_product_col),("Customer Name",detail_customer_col)] if not column]
+                st.error("Kolom database belum lengkap untuk Detail Customer: "+", ".join(missing_detail))
+            else:
+                detail_years=sorted(perf["_perf_year"].dropna().astype(int).unique().tolist())
+                detail_pid_values=(perf[principal_col].astype("string").str.strip()
+                    .replace({"":"(Tidak tercantum)","None":"(Tidak tercantum)","nan":"(Tidak tercantum)","<NA>":"(Tidak tercantum)"})
+                    .fillna("(Tidak tercantum)"))
+                detail_filter_cols=st.columns(5)
+                with detail_filter_cols[0]:
+                    detail_pid_options=sorted(detail_pid_values.unique().tolist())
+                    detail_selected_pids=st.multiselect(
+                        "Principal ID",detail_pid_options,
+                        key="performance_detail_customer_principal",
+                        placeholder="Semua Principal ID",
+                    )
+                with detail_filter_cols[1]:
+                    detail_year_default=int(selected_year) if int(selected_year) in detail_years else (max(detail_years) if detail_years else 2026)
+                    detail_year=st.selectbox(
+                        "Year",detail_years,
+                        index=detail_years.index(detail_year_default) if detail_year_default in detail_years else 0,
+                        key="performance_detail_customer_year",
+                    ) if detail_years else detail_year_default
+                with detail_filter_cols[2]:
+                    detail_months=sorted(perf.loc[perf["_perf_year"].eq(int(detail_year)),"_perf_month"].dropna().astype(int).unique().tolist())
+                    detail_month_default=int(selected_month) if int(selected_month) in detail_months else (max(detail_months) if detail_months else 1)
+                    detail_month=st.selectbox(
+                        "Month",detail_months,
+                        index=detail_months.index(detail_month_default) if detail_month_default in detail_months else 0,
+                        format_func=lambda value:MONTHS.get(int(value),str(value)),
+                        key="performance_detail_customer_month",
+                    ) if detail_months else detail_month_default
+                with detail_filter_cols[3]:
+                    detail_product_options=sorted(perf[detail_product_col].dropna().astype(str).unique().tolist())
+                    detail_selected_products=st.multiselect(
+                        "Product",detail_product_options,
+                        key="performance_detail_customer_product",
+                        placeholder="Semua Product",
+                    )
+                with detail_filter_cols[4]:
+                    detail_customer_search=st.text_input(
+                        "Customer Name",key="performance_detail_customer_search",
+                        placeholder="Cari nama customer",
+                    ).strip()
+
+                if not (detail_selected_pids or detail_selected_products or detail_customer_search):
+                    st.info("Isi minimal satu filter Principal ID, Product, atau Customer Name untuk menampilkan tabel.")
+                else:
+                    detail_scope=perf.copy()
+                    detail_scope["_detail_principal_id"]=detail_pid_values
+                    if detail_selected_pids:
+                        detail_scope=detail_scope[detail_scope["_detail_principal_id"].isin(detail_selected_pids)]
+                    if detail_selected_products:
+                        detail_scope=detail_scope[detail_scope[detail_product_col].astype(str).isin(detail_selected_products)]
+                    if detail_customer_search:
+                        detail_scope=detail_scope[
+                            detail_scope[detail_customer_col].astype(str).str.contains(
+                                detail_customer_search,case=False,regex=False,na=False
+                            )
+                        ]
+
+                    detail_dimensions=["Principal ID","Customer Name","Product Description"]
+                    detail_base=detail_scope[
+                        ["_detail_principal_id",detail_customer_col,detail_product_col,"_perf_year","_perf_month","_perf_sales"]
+                    ].copy().rename(columns={
+                        "_detail_principal_id":"Principal ID",
+                        detail_customer_col:"Customer Name",
+                        detail_product_col:"Product Description",
+                    })
+                    for dimension in detail_dimensions:
+                        detail_base[dimension]=(detail_base[dimension].astype("string").str.strip()
+                            .replace({"":"(Tidak tercantum)","None":"(Tidak tercantum)","nan":"(Tidak tercantum)","<NA>":"(Tidak tercantum)"})
+                            .fillna("(Tidak tercantum)"))
+
+                    def detail_sales_by_group(data):
+                        return data.groupby(detail_dimensions,dropna=False)["_perf_sales"].sum()
+
+                    current_sales=detail_sales_by_group(detail_base[
+                        detail_base["_perf_year"].eq(int(detail_year))
+                        & detail_base["_perf_month"].eq(int(detail_month))
+                    ]).rename("Sales")
+                    history_2026=detail_base[
+                        detail_base["_perf_year"].eq(2026)
+                        & detail_base["_perf_month"].lt(int(detail_month))
+                    ]
+                    history_2025=detail_base[detail_base["_perf_year"].eq(2025)]
+                    avg_2026=(detail_sales_by_group(history_2026)/(int(detail_month)-1)).rename("History · Avg 2026") if int(detail_month)>1 else detail_sales_by_group(detail_base.iloc[0:0]).rename("History · Avg 2026")
+                    avg_2025=(detail_sales_by_group(history_2025)/12).rename("History · Avg 2025")
+                    sales_col_label=f"Sales · {MONTHS.get(int(detail_month),str(detail_month))} {int(detail_year)}"
+                    detail_columns=[*detail_dimensions,"History · Avg 2026","History · Avg 2025",sales_col_label]
+                    if detail_base.empty:
+                        detail_table=pd.DataFrame(columns=detail_columns)
+                    else:
+                        detail_table=pd.concat([avg_2026,avg_2025,current_sales],axis=1).fillna(0).reset_index()
+                        detail_table=detail_table.rename(columns={"Sales":sales_col_label}).reindex(columns=detail_columns)
+                        detail_table=detail_table.sort_values(sales_col_label,ascending=False).reset_index(drop=True)
+                    if int(detail_month)<=1 and not detail_table.empty:
+                        detail_table["History · Avg 2026"]="—"
+                    st.caption(
+                        f"History Avg 2026 adalah rata-rata sales bulanan Januari sampai sebelum "
+                        f"{MONTHS.get(int(detail_month),str(detail_month))}; Avg 2025 adalah total sales tahun 2025 dibagi 12."
+                    )
+                    if int(detail_month)<=1:
+                        st.info("Avg 2026 belum tersedia karena belum ada bulan sebelum bulan terpilih.")
+                    detail_config={
+                        "History · Avg 2025":st.column_config.NumberColumn(format="Rp %,.0f"),
+                        sales_col_label:st.column_config.NumberColumn(format="Rp %,.0f"),
+                    }
+                    if int(detail_month)>1:
+                        detail_config["History · Avg 2026"]=st.column_config.NumberColumn(format="Rp %,.0f")
+                    st.dataframe(detail_table,width="stretch",hide_index=True,column_config=detail_config)
+                    st.download_button(
+                        "⬇ Unduh Detail Customer (.csv)",
+                        data=detail_table.to_csv(index=False).encode("utf-8-sig"),
+                        file_name=f"detail_customer_{int(detail_year)}_{int(detail_month):02d}.csv",
+                        mime="text/csv",key="export_performance_detail_customer",
+                    )
         else:
             st.markdown(f"#### Customer di Bawah Rata-rata {int(selected_year)} · bulan berjalan {month_name}")
             st.caption("Rata-rata dihitung dari semua bulan sebelum bulan terpilih pada tahun terpilih (bulan berjalan tidak ikut dihitung). Pencapaian membandingkan actual bulan berjalan dengan rata-rata tersebut, growth membandingkan bulan berjalan dengan bulan sebelumnya, dan deviasi = actual bulan berjalan dikurangi rata-rata.")
