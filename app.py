@@ -1315,51 +1315,51 @@ if main_section=="Program Push":
         st.caption(f"📅 Konfigurasi yang sedang dibuka: **{_active_push_month}**. Bulan transaksi dihitung sesuai pilihan tiap program.")
 
 with st.sidebar:
-    st.header("Data dashboard")
-    default_db=Path(__file__).parent/"database_push.xlsx"
-    try:
-        _drive_settings=st.secrets.get("google_drive",{})
-        _gcp_account=st.secrets.get("gcp_service_account",{})
-        _drive_file_id=str(_drive_settings.get("database_file_id","")).strip()
-        _drive_database_folder_id=str(_drive_settings.get("database_folder_id",DEFAULT_DRIVE_DATABASE_FOLDER_ID)).strip()
-        _drive_is_folder=not bool(_drive_file_id)
-        _drive_source_id=_drive_file_id or _drive_database_folder_id
-        _drive_configured=bool(_drive_source_id and _gcp_account)
-    except Exception:
-        _drive_settings={}; _gcp_account={}; _drive_configured=False
-    # Drive data is divided into monthly branch spreadsheets so each file stays
-    # small enough to open and update in Google Sheets.
-    _data_source_mode="Google Drive · spreadsheet bulanan" if _drive_configured else "Lokal / unggah"
-    source=None
-    _drive_database_path=None
-    if _data_source_mode.startswith("Google Drive"):
-        st.caption(f"Sumber data: spreadsheet bulanan cabang {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}) di Google Drive.")
-        st.caption("Untuk update harian, buka file bulan berjalan di folder database_monthly_split, tambahkan/perbarui data, lalu gunakan tombol periksa pembaruan.")
-        _drive_database_path=APP_DIR/".remote_database"/"database_push.xlsx"
-        if st.button("↻ Periksa pembaruan dari Drive",key="refresh_drive_database",width="stretch"):
-            # Refresh Drive metadata/listing only. The normalized DataFrame cache is
-            # keyed by each file's modifiedTime and size, so a changed workbook
-            # naturally gets a new cache key. Clearing all resource caches here
-            # duplicates large branch data in memory and can crash Streamlit Cloud.
+    with st.expander("Data dashboard", expanded=False):
+        default_db=Path(__file__).parent/"database_push.xlsx"
+        try:
+            _drive_settings=st.secrets.get("google_drive",{})
+            _gcp_account=st.secrets.get("gcp_service_account",{})
+            _drive_file_id=str(_drive_settings.get("database_file_id","")).strip()
+            _drive_database_folder_id=str(_drive_settings.get("database_folder_id",DEFAULT_DRIVE_DATABASE_FOLDER_ID)).strip()
+            _drive_is_folder=not bool(_drive_file_id)
+            _drive_source_id=_drive_file_id or _drive_database_folder_id
+            _drive_configured=bool(_drive_source_id and _gcp_account)
+        except Exception:
+            _drive_settings={}; _gcp_account={}; _drive_configured=False
+        # Drive data is divided into monthly branch spreadsheets so each file stays
+        # small enough to open and update in Google Sheets.
+        _data_source_mode="Google Drive · spreadsheet bulanan" if _drive_configured else "Lokal / unggah"
+        source=None
+        _drive_database_path=None
+        if _data_source_mode.startswith("Google Drive"):
+            st.caption(f"Sumber data: spreadsheet bulanan cabang {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}) di Google Drive.")
+            st.caption("Untuk update harian, buka file bulan berjalan di folder database_monthly_split, tambahkan/perbarui data, lalu gunakan tombol periksa pembaruan.")
+            _drive_database_path=APP_DIR/".remote_database"/"database_push.xlsx"
+            if st.button("↻ Periksa pembaruan dari Drive",key="refresh_drive_database",width="stretch"):
+                # Refresh Drive metadata/listing only. The normalized DataFrame cache is
+                # keyed by each file's modifiedTime and size, so a changed workbook
+                # naturally gets a new cache key. Clearing all resource caches here
+                # duplicates large branch data in memory and can crash Streamlit Cloud.
+                st.cache_data.clear()
+                st.rerun()
+        else:
+            source=st.file_uploader("Ganti database untuk sesi ini (opsional)",type=["xlsx","xls"],key="db")
+        if _drive_configured:
+            st.caption(f"Cabang aktif: {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}). Data diambil dari spreadsheet per bulan agar mudah diperbarui.")
+        elif default_db.exists():
+            st.caption(f"Cabang aktif: {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}). Workbook dapat berisi sheet BDG, PTK, dan MDN; dashboard hanya membaca sheet cabang aktif.")
+        else:
+            st.caption("Letakkan database_push.xlsx di folder aplikasi, atau unggah file di sini.")
+        if not _drive_configured and st.button("↻ Refresh database",width="stretch"):
             st.cache_data.clear()
+            st.cache_resource.clear()
+            st.session_state.pop("_base_filter_option_cache",None)
+            st.session_state.pop("_sasaran_positive_pool_cache",None)
             st.rerun()
-    else:
-        source=st.file_uploader("Ganti database untuk sesi ini (opsional)",type=["xlsx","xls"],key="db")
-    if _drive_configured:
-        st.caption(f"Cabang aktif: {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}). Data diambil dari spreadsheet per bulan agar mudah diperbarui.")
-    elif default_db.exists():
-        st.caption(f"Cabang aktif: {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}). Workbook dapat berisi sheet BDG, PTK, dan MDN; dashboard hanya membaca sheet cabang aktif.")
-    else:
-        st.caption("Letakkan database_push.xlsx di folder aplikasi, atau unggah file di sini.")
-    if not _drive_configured and st.button("↻ Refresh database",width="stretch"):
-        st.cache_data.clear()
-        st.cache_resource.clear()
-        st.session_state.pop("_base_filter_option_cache",None)
-        st.session_state.pop("_sasaran_positive_pool_cache",None)
-        st.rerun()
-    calendar_path=OVERVIEW_DATA_DIR/"overview_calendar.xlsx"
-    fixed_call_path=OVERVIEW_DATA_DIR/"overview_fixed_call.xlsx"
-    with st.expander("File sasaran kunjungan harian"):
+        calendar_path=OVERVIEW_DATA_DIR/"overview_calendar.xlsx"
+        fixed_call_path=OVERVIEW_DATA_DIR/"overview_fixed_call.xlsx"
+        st.markdown("**File sasaran kunjungan harian**")
         st.caption("Dashboard memakai tanggal hari ini dari Overview Calendar dan rute hari/week dari Overview Fixed Call.")
         for upload_label,file_key,path in [
             ("Perbarui Overview Calendar","calendar_upload",calendar_path),
