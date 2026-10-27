@@ -1166,20 +1166,20 @@ st.markdown("""
 st.markdown("""
 <style>
 @keyframes dashboard-enter {
-  from { opacity: 0; transform: translate3d(0, 12px, 0); }
+  from { opacity: 0; transform: translate3d(0, 18px, 0) scale(.985); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 @media (prefers-reduced-motion: no-preference) {
   .brand,
   .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"],
   section[data-testid="stSidebar"] [data-testid="stElementContainer"] {
-    animation: dashboard-enter .48s cubic-bezier(.2, .7, .2, 1) both;
+    animation: dashboard-enter .62s cubic-bezier(.16, 1, .3, 1) both;
   }
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(2) { animation-delay: .04s; }
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(3) { animation-delay: .08s; }
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(4) { animation-delay: .12s; }
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(5) { animation-delay: .16s; }
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(n+6) { animation-delay: .2s; }
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(2) { animation-delay: .05s; }
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(3) { animation-delay: .1s; }
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(4) { animation-delay: .15s; }
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(5) { animation-delay: .2s; }
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(n+6) { animation-delay: .25s; }
   div[data-testid="stMetric"] {
     transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
   }
