@@ -1332,6 +1332,58 @@ div[data-testid='stMetric'] [data-testid='stMetricValue'] {{
 .insight-low {{ background: #FEF2F2 !important; border-left-color: #EF4444 !important; }}
 .insight-medium {{ background: #FFFBEB !important; border-left-color: #F59E0B !important; }}
 .insight-good {{ background: #F0FDF4 !important; border-left-color: #22C55E !important; }}
+.monitoring-sales-card {{
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-top: 4px solid #20B2AA;
+  border-radius: 10px;
+  padding: 14px 15px;
+  min-height: 82px;
+  box-shadow: 0 2px 8px rgba(15,23,42,.08);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}}
+.monitoring-sales-card--orange {{ border-top-color: #FF9800; }}
+.monitoring-sales-card:hover {{
+  transform: translateY(-5px);
+  box-shadow: 0 12px 24px rgba(15,23,42,.16);
+  border-color: #CBD5E1;
+}}
+.monitoring-sales-card--teal:hover {{ border-top-color: #20B2AA; }}
+.monitoring-sales-card--orange:hover {{ border-top-color: #FF9800; }}
+.monitoring-sales-card__label {{
+  color: #64748B;
+  font-size: .76rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}}
+.monitoring-sales-card__value {{
+  color: #263449;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.25;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+}}
+.monitoring-sales-card__value--negative {{ color: #E53935; }}
+.monitoring-sales-fot {{
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-top: 4px solid #FF9800;
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: #64748B;
+  text-align: center;
+  font-size: .76rem;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(15,23,42,.08);
+  transition: transform .2s ease, box-shadow .2s ease;
+}}
+.monitoring-sales-fot:hover {{
+  transform: translateY(-4px);
+  box-shadow: 0 10px 20px rgba(15,23,42,.14);
+}}
+.monitoring-sales-fot strong {{ color: #E67E00; font-size: 1.4rem; }}
 div[data-testid='stDataFrame'], div[data-testid='stDataEditor'] {{
   --gdg-text-dark: #1E293B;
   --gdg-text-medium: #1E293B;
@@ -4906,17 +4958,20 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
         if perf_view=="Monitoring Sales":
             st.markdown(f"#### {month_name} {int(selected_year)}")
             top=st.columns(4,gap="small")
-            monthly_metrics=[(f"Actual Gross · {month_name}",m_actual,"#22396F"),(f"Target · {month_name}",m_target,"#0C1D42"),("A/T",m_ach,"#22396F"),("Deviasi",m_dev,"#0C1D42")]
-            for c,(label,value,color) in zip(top,monthly_metrics):
+            monthly_metrics=[(f"Actual Gross · {month_name}",m_actual),(f"Target · {month_name}",m_target),("A/T",m_ach),("Deviasi",m_dev)]
+            for index,(c,(label,value)) in enumerate(zip(top,monthly_metrics)):
                 with c:
                     display=f"{value:,.1f}%" if label=="A/T" and value is not None else ("—" if value is None else f"{value:,.0f}")
-                    st.markdown(f"<div style='background:{color};border:1px solid #344a78;border-radius:12px;padding:12px 15px;min-height:92px;box-shadow:0 5px 0 #000737'><div style='font-size:.82rem;color:#FCF1CF;opacity:.85'>{label}</div><div style='font-size:1.55rem;font-weight:800;color:#FCF1CF;margin-top:8px'>{display}</div></div>",unsafe_allow_html=True)
+                    accent_class="monitoring-sales-card--orange" if index%2 else "monitoring-sales-card--teal"
+                    negative_class=" monitoring-sales-card__value--negative" if label=="Deviasi" and value is not None and value<0 else ""
+                    st.markdown(f"<div class='monitoring-sales-card {accent_class}'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
             cum=st.columns(4,gap="small")
             cum_metrics=[("Actual Gross · YTD",y_actual),("Target · YTD",y_target),("A/T · YTD",y_ach),("Deviasi · YTD",y_dev)]
             for c,(label,value) in zip(cum,cum_metrics):
                 with c:
                     display=f"{value:,.1f}%" if label.startswith("A/T") and value is not None else ("—" if value is None else f"{value:,.0f}")
-                    st.markdown(f"<div style='background:#0C1D42;border:1px solid #344a78;border-radius:12px;padding:10px 14px;min-height:78px;box-shadow:0 4px 0 #000737'><div style='font-size:.78rem;color:#FCF1CF;opacity:.8'>{label}</div><div style='font-size:1.28rem;font-weight:800;color:#FCF1CF;margin-top:6px'>{display}</div></div>",unsafe_allow_html=True)
+                    negative_class=" monitoring-sales-card__value--negative" if label.startswith("Deviasi") and value is not None and value<0 else ""
+                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
             m_principal=month_df.groupby(principal_col,dropna=False).agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum")).reset_index()
             m_principal=m_principal.rename(columns={principal_col:"Principal ID"})
             y_principal=ytd_df.groupby(principal_col,dropna=False).agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum")).reset_index().rename(columns={principal_col:"Principal ID"})
@@ -4939,19 +4994,19 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
             chart_header, fot_box=st.columns([5,1])
             with chart_header: st.markdown("#### Trend Sales Bulanan · Actual vs Target")
             with fot_box:
-                st.markdown(f"<div style='background:#858585;border-radius:6px;text-align:center;padding:4px 8px;color:white;font-weight:800'>FOT {int(selected_year)}<br><span style='font-size:1.45rem'>{fot}x</span></div>",unsafe_allow_html=True)
+                st.markdown(f"<div class='monitoring-sales-fot'>FOT {int(selected_year)}<br><strong>{fot}x</strong></div>",unsafe_allow_html=True)
             at_max=float(trend["A/T %"].dropna().max()) if trend["A/T %"].notna().any() else 150
             at_axis_max=max(150,math.ceil(at_max/25)*25)
             bars=alt.Chart(trend).transform_fold(["Sales","Target"],as_=["Jenis","Nilai"]).mark_bar(size=25,opacity=.9).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist(),axis=alt.Axis(title="BULAN",labelAngle=-30,labelPadding=7)),
                 xOffset=alt.XOffset("Jenis:N"),y=alt.Y("Nilai:Q",title="Sales Value Gross / Target",scale=alt.Scale(domainMin=0),axis=alt.Axis(format="~s",titlePadding=10)),
-                color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#B9CADB","#83AED0"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)),
+                color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#20B2AA","#CBD5E1"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)),
                 tooltip=["Month:N","Jenis:N",alt.Tooltip("Nilai:Q",format=",.0f")])
-            line=alt.Chart(trend).mark_line(color="#796FAE",strokeDash=[7,5],strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=58)).encode(
+            line=alt.Chart(trend).mark_line(color="#FF5B63",strokeDash=[7,5],strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=58)).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist()),y=alt.Y("A/T %:Q",title="A/T (%)",scale=alt.Scale(domain=[0,at_axis_max]),axis=alt.Axis(orient="right",format=".0f",labelExpr="datum.value + '%'",grid=False,titlePadding=10)),
                 tooltip=["Month:N",alt.Tooltip("A/T %:Q",title="A/T",format=".1f")])
             combo=alt.layer(bars,line).resolve_scale(y="independent").properties(height=350,padding={"left":10,"right":8,"top":8,"bottom":2})
-            combo=combo.configure(background="#F4F6F9").configure_view(fill="#F4F6F9",stroke="#E1E7EF",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=12,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E0E6ED",gridDash=[3,4],titlePadding=8).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
+            combo=combo.configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=12,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E0E6ED",gridDash=[3,4],titlePadding=8).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
             st.altair_chart(combo,width="stretch")
 
             # ═══════════════════════════════════════════════════════════════
