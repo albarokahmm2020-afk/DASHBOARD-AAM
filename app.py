@@ -1163,6 +1163,42 @@ st.markdown("""
 }
 </style>
 """.replace("__BANDUNG_BG__", bandung_bg_data), unsafe_allow_html=True)
+st.markdown("""
+<style>
+@keyframes dashboard-enter {
+  from { opacity: 0; transform: translate3d(0, 12px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .brand,
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"],
+  section[data-testid="stSidebar"] [data-testid="stElementContainer"] {
+    animation: dashboard-enter .48s cubic-bezier(.2, .7, .2, 1) both;
+  }
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(2) { animation-delay: .04s; }
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(3) { animation-delay: .08s; }
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(4) { animation-delay: .12s; }
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(5) { animation-delay: .16s; }
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(n+6) { animation-delay: .2s; }
+  div[data-testid="stMetric"] {
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  div[data-testid="stMetric"]:hover {
+    transform: translateY(-2px);
+    border-color: #5474B2;
+    box-shadow: 0 12px 24px rgba(0,7,55,.48), inset 0 1px 0 rgba(255,255,255,.16);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
 st.markdown(f"<div class='brand'>{bandung_header_img}{logo_aam_img}<div class='brand-copy'><h1>CHP AAM</h1><div class='brand-caption'><span class='bandung-badge'>CABANG {ACTIVE_BRANCH_NAME.upper()} · {ACTIVE_BRANCH_CODE}</span><span>PUSH PERFORMANCE · Monitoring actual, target, achievement, dan insight per program</span></div><div class='brand-landmark-label'>{_theme['landmarks'].replace(' · ',' <i>·</i> ')}</div></div>{attack_img}</div>",unsafe_allow_html=True)
 if "dashboard_page" not in st.session_state:
     st.session_state["dashboard_page"]=settings.get("dashboard_page","Summary Program")
