@@ -63,13 +63,14 @@ def _color_performance_columns(table):
         if any(token in str(column).strip().casefold() for token in ("dev", "deviation", "gap"))
     ]
     styled = table if is_styler else table.style
-    row_backgrounds = ["#F4F7FB" if index % 2 == 0 else "#E8EEF6" for index in range(len(source))]
+    row_backgrounds = ["#FFFFFF" if index % 2 == 0 else "#F3F6FB" for index in range(len(source))]
     styled = styled.set_table_styles([
-        {"selector": "table", "props": [("border-collapse", "collapse"), ("width", "100%"), ("border", "1px solid #C7D4E5")]},
-        {"selector": "th", "props": [("background", "linear-gradient(180deg,#335A9F 0%,#24477F 100%)"), ("color", "#FFFFFF"), ("font-weight", "800"), ("font-size", ".82rem"), ("line-height", "1.1"), ("border", "1px solid #1D3B70"), ("padding", "3px 3px")]},
-        {"selector": "td", "props": [("font-size", ".82rem"), ("line-height", "1.1"), ("border", "1px solid #D4DEEA"), ("color", "#1B2E46"), ("padding", "2px 3px")]},
+        {"selector": "table", "props": [("border-collapse", "collapse"), ("width", "100%"), ("border", "1px solid #DFE6F0"), ("background-color", "#FFFFFF")]},
+        {"selector": "th", "props": [("background", UI_ACCENT), ("color", "#FFFFFF"), ("font-weight", "700"), ("font-size", "12.5px"), ("line-height", "1.2"), ("border", "1px solid rgba(15,23,42,.12)"), ("padding", "8px 7px"), ("text-align", "left"), ("white-space", "nowrap")]},
+        {"selector": "td", "props": [("font-size", "12.5px"), ("line-height", "1.2"), ("border", "1px solid #E3E9F2"), ("color", "#22304A"), ("padding", "7px 7px"), ("white-space", "nowrap")]},
+        {"selector": "td:first-child", "props": [("font-weight", "600")]},
     ], overwrite=False)
-    styled = styled.set_properties(**{"background-color": "#F4F7FB", "color": "#1B2E46"})
+    styled = styled.set_properties(**{"background-color": "#FFFFFF", "color": "#22304A"})
     styled = styled.apply(lambda column: [f"background-color:{row_backgrounds[index]}" for index in range(len(column))], axis=0)
     def total_row_style(row):
         is_total = any(
@@ -77,7 +78,7 @@ def _color_performance_columns(table):
             for value in row.tolist()
         )
         if is_total:
-            return ["font-weight:900;border-top:2px solid #335A9F;background-color:#DCE6F3;color:#1B2E46"] * len(row)
+            return [f"font-weight:800;border-top:2px solid {UI_ACCENT};background-color:#EEF2F7;color:#1E293B"] * len(row)
         return [""] * len(row)
     styled = styled.apply(total_row_style, axis=1)
     for column in at_columns:
@@ -819,6 +820,7 @@ if "active_branch_code" not in st.session_state:
 _branch_choice=st.selectbox("Pilih Cabang",list(BRANCH_OPTIONS),format_func=lambda code:f"{BRANCH_OPTIONS[code]} ({code})",key="active_branch_code",on_change=_reset_branch_session)
 ACTIVE_BRANCH_CODE=_branch_choice
 ACTIVE_BRANCH_NAME=BRANCH_OPTIONS[ACTIVE_BRANCH_CODE]
+UI_ACCENT={"BDG":"#20B2AA","PTK":"#6366F1","MDN":"#28A745"}[ACTIVE_BRANCH_CODE]
 BRANCH_THEMES={
     "BDG":{"red":"#C8102E","navy":"#000737","blue":"#22396F","midnight":"#0C1D42","cream":"#FCF1CF","landmarks":"GEDUNG SATE · PARIS VAN JAVA · KOTA KEMBANG"},
     "PTK":{"red":"#E36B55","navy":"#052B35","blue":"#087E83","midnight":"#0B414B","cream":"#E7FAF4","landmarks":"TUGU KHATULISTIWA · SUNGAI KAPUAS · KOTA KHATULISTIWA"},
@@ -1197,6 +1199,171 @@ st.markdown("""
     transition-duration: .01ms !important;
   }
 }
+</style>
+""", unsafe_allow_html=True)
+st.markdown(f"""
+<style>
+:root {{ color-scheme: light; }}
+html, body, .stApp {{
+  background: #F8F9FA !important;
+  color: #1E293B !important;
+  font-family: 'Segoe UI', Tahoma, Inter, system-ui, -apple-system, Arial, sans-serif !important;
+}}
+.stApp {{ background-image: none !important; }}
+.stMainBlockContainer {{ background: transparent !important; }}
+h1, h2, h3, h4, h5, h6, p, label,
+[data-testid='stCaptionContainer'],
+[data-testid='stMarkdownContainer'] {{ color: #1E293B; }}
+[data-testid='stCaptionContainer'] p {{ color: #64748B; }}
+section[data-testid='stSidebar'] {{
+  background: #FFFFFF !important;
+  border-right: 1px solid #E2E8F0;
+}}
+section[data-testid='stSidebar'] h1,
+section[data-testid='stSidebar'] h2,
+section[data-testid='stSidebar'] h3,
+section[data-testid='stSidebar'] p,
+section[data-testid='stSidebar'] label,
+section[data-testid='stSidebar'] [data-testid='stCaptionContainer'] {{ color: #334155 !important; }}
+.brand {{
+  background: #FFFFFF !important;
+  border: 1px solid #E2E8F0 !important;
+  border-top: 4px solid {UI_ACCENT} !important;
+  border-left: 1px solid #E2E8F0 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 2px 10px rgba(15,23,42,.08) !important;
+}}
+.brand-backdrop {{ opacity: .08 !important; }}
+.brand h1 {{ color: #0F172A !important; text-shadow: none !important; }}
+.brand-caption {{ color: #334155 !important; }}
+.brand-caption .bandung-badge {{
+  background: {UI_ACCENT} !important;
+  border-color: {UI_ACCENT} !important;
+  color: #FFFFFF !important;
+  box-shadow: none !important;
+}}
+.brand-landmark-label {{ display: none !important; }}
+div[data-baseweb='select'] > div,
+input, textarea,
+[data-testid='stMultiSelect'] [role='group'],
+[data-testid='stSelectbox'] [role='group'] {{
+  background: #FFFFFF !important;
+  color: #1E293B !important;
+  border-color: #CBD5E1 !important;
+  border-radius: 6px !important;
+}}
+div[data-baseweb='select'] > div:hover, input:hover, textarea:hover {{
+  border-color: {UI_ACCENT} !important;
+}}
+div[data-baseweb='popover'], [role='listbox'],
+[data-testid='stPopoverBody'] {{
+  background: #FFFFFF !important;
+  color: #1E293B !important;
+  border-color: #E2E8F0 !important;
+}}
+[data-baseweb='popover'] *, [role='listbox'] * {{ color: #1E293B !important; }}
+span[data-baseweb='tag'] {{
+  background: {UI_ACCENT} !important;
+  border-color: {UI_ACCENT} !important;
+}}
+span[data-baseweb='tag'] span {{ color: #FFFFFF !important; }}
+span[data-baseweb='tag'] svg {{ fill: #FFFFFF !important; }}
+button[kind='primary'] {{
+  background: {UI_ACCENT} !important;
+  border: 1px solid {UI_ACCENT} !important;
+  border-radius: 6px !important;
+  color: #FFFFFF !important;
+  box-shadow: none !important;
+}}
+button[kind='primary']:hover {{ filter: brightness(.94); }}
+button[kind='secondary'] {{
+  background: #E9ECEF !important;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 6px !important;
+  color: #334155 !important;
+  box-shadow: none !important;
+}}
+div[data-testid='stRadio'] div[role='radiogroup'] {{ gap: 6px; flex-wrap: wrap; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label {{
+  background: #E9ECEF;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  padding: 7px 14px;
+}}
+div[data-testid='stRadio'] div[role='radiogroup'] label p {{ color: #334155 !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) {{
+  background: {UI_ACCENT} !important;
+  border-color: {UI_ACCENT} !important;
+}}
+div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) p {{
+  color: #FFFFFF !important;
+}}
+div[data-testid='stMetric'], .scorecard, .score-heading,
+details[data-testid='stExpander'],
+div[data-testid='stDataFrame'], div[data-testid='stDataEditor'] {{
+  background: #FFFFFF !important;
+  color: #1E293B !important;
+  border: 1px solid #E2E8F0 !important;
+  border-top: 4px solid {UI_ACCENT} !important;
+  border-radius: 10px !important;
+  box-shadow: 0 2px 8px rgba(15,23,42,.08) !important;
+}}
+div[data-testid='stMetric'] {{ padding: 14px 16px !important; }}
+div[data-testid='stMetric'] label,
+div[data-testid='stMetric'] [data-testid='stMetricLabel'] {{
+  color: #64748B !important;
+}}
+div[data-testid='stMetric'] [data-testid='stMetricValue'] {{
+  color: #1E293B !important;
+  font-weight: 800 !important;
+}}
+.score-heading {{
+  border-left: 4px solid {UI_ACCENT} !important;
+  color: #1E293B !important;
+  text-shadow: none !important;
+  white-space: normal !important;
+}}
+.scorecard {{ padding: 14px 15px !important; }}
+.score-program {{ color: {UI_ACCENT} !important; }}
+.score-name, .score-row, .score-gap {{ color: #1E293B !important; }}
+.score-filter, .score-ach, .weekly-plot-label {{ color: #64748B !important; }}
+.weekly-plot-track {{ background: #E9ECEF !important; border-color: #DDE4EC !important; }}
+.score-insight {{ color: #475569 !important; }}
+.insight-low {{ background: #FEF2F2 !important; border-left-color: #EF4444 !important; }}
+.insight-medium {{ background: #FFFBEB !important; border-left-color: #F59E0B !important; }}
+.insight-good {{ background: #F0FDF4 !important; border-left-color: #22C55E !important; }}
+div[data-testid='stDataFrame'], div[data-testid='stDataEditor'] {{
+  --gdg-text-dark: #1E293B;
+  --gdg-text-medium: #1E293B;
+  --gdg-text-header: #FFFFFF;
+  --gdg-bg-cell: #FFFFFF;
+  --gdg-bg-cell-medium: #F3F6FB;
+  --gdg-bg-header: {UI_ACCENT};
+  --gdg-bg-header-hover: {UI_ACCENT};
+  overflow: hidden;
+}}
+div[data-testid='stTable'] th,
+div[data-testid='stTable'] th p,
+.table-scroll-wrap th {{
+  background: {UI_ACCENT} !important;
+  color: #FFFFFF !important;
+  border-color: rgba(15,23,42,.12) !important;
+}}
+div[data-testid='stTable'] td,
+div[data-testid='stTable'] td p,
+.table-scroll-wrap td {{
+  color: #1E293B !important;
+  background: #FFFFFF !important;
+}}
+div[data-testid='stTable'] tbody tr:nth-child(even) td,
+.table-scroll-wrap tbody tr:nth-child(even) td {{ background: #F3F6FB !important; }}
+details[data-testid='stExpander'] summary {{ color: #1E293B !important; }}
+[data-testid='stAlert'], [data-testid='stChatMessage'] {{
+  border-radius: 10px;
+}}
+@media print {{
+  .stApp {{ background-image: none !important; background-color: #F8F9FA !important; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 st.markdown(f"<div class='brand'>{bandung_header_img}{logo_aam_img}<div class='brand-copy'><h1>CHP AAM</h1><div class='brand-caption'><span class='bandung-badge'>CABANG {ACTIVE_BRANCH_NAME.upper()} · {ACTIVE_BRANCH_CODE}</span><span>PUSH PERFORMANCE · Monitoring actual, target, achievement, dan insight per program</span></div><div class='brand-landmark-label'>{_theme['landmarks'].replace(' · ',' <i>·</i> ')}</div></div>{attack_img}</div>",unsafe_allow_html=True)
