@@ -4997,14 +4997,13 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 st.markdown(f"<div class='monitoring-sales-fot'>FOT {int(selected_year)}<br><strong>{fot}x</strong></div>",unsafe_allow_html=True)
             at_max=float(trend["A/T %"].dropna().max()) if trend["A/T %"].notna().any() else 150
             at_axis_max=max(150,math.ceil(at_max/25)*25)
-            bars=alt.Chart(trend).transform_fold(["Sales","Target"],as_=["Jenis","Nilai"]).mark_bar(size=25,opacity=.9).encode(
+            bars=alt.Chart(trend).transform_fold(["Sales","Target"],as_=["Jenis","Nilai"]).mark_bar(size=25,opacity=.9,tooltip=False).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist(),axis=alt.Axis(title="BULAN",labelAngle=-30,labelPadding=7)),
                 xOffset=alt.XOffset("Jenis:N"),y=alt.Y("Nilai:Q",title="Sales Value Gross / Target",scale=alt.Scale(domainMin=0),axis=alt.Axis(format="~s",titlePadding=10)),
-                color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#20B2AA","#CBD5E1"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)),
-                tooltip=["Month:N","Jenis:N",alt.Tooltip("Nilai:Q",format=",.0f")])
-            line=alt.Chart(trend).mark_line(color="#FF5B63",strokeDash=[7,5],strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=58)).encode(
+                color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#20B2AA","#CBD5E1"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)))
+            line=alt.Chart(trend).mark_line(color="#FF5B63",strokeDash=[7,5],strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=58),tooltip=False).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist()),y=alt.Y("A/T %:Q",title="A/T (%)",scale=alt.Scale(domain=[0,at_axis_max]),axis=alt.Axis(orient="right",format=".0f",labelExpr="datum.value + '%'",grid=False,titlePadding=10)),
-                tooltip=["Month:N",alt.Tooltip("A/T %:Q",title="A/T",format=".1f")])
+            )
             combo=alt.layer(bars,line).resolve_scale(y="independent").properties(height=350,padding={"left":10,"right":8,"top":8,"bottom":2})
             combo=combo.configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=12,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E0E6ED",gridDash=[3,4],titlePadding=8).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
             st.altair_chart(combo,width="stretch")
