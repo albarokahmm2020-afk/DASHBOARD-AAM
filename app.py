@@ -1198,6 +1198,18 @@ st.markdown("""
     scroll-behavior: auto !important;
     transition-duration: .01ms !important;
   }
+  .brand,
+  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"],
+  section[data-testid="stSidebar"] [data-testid="stElementContainer"] {
+    animation: none !important;
+  }
+  .scorecard:hover,
+  .monitoring-sales-card:hover,
+  .monitoring-sales-fot:hover,
+  div[data-testid="stMetric"]:hover,
+  button[kind="primary"]:hover {
+    transform: none !important;
+  }
 }
 </style>
 """, unsafe_allow_html=True)
