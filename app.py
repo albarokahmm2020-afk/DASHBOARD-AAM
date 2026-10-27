@@ -2002,6 +2002,7 @@ if main_section=="Program Push" and "_active_push_month" in dir() and not st.ses
 
     with st.expander(f"⚙️ Konfigurasi Program · {_active_push_month}", expanded=False):
         st.caption("Pilih bulan transaksi, tahun, metric, dan filter masing-masing program untuk perhitungan Summary.")
+        st.caption("Perubahan konfigurasi tersimpan otomatis dan akan dipulihkan saat dashboard dibuka kembali.")
         _template=target_template().to_csv(index=False).encode("utf-8-sig")
         st.download_button("Unduh template target CSV",_template,"template_target_chp_aam.csv","text/csv",key=f"target_template_{_active_push_month}")
         st.caption("Upload target di dalam setiap program. Kolom wajib: Year, Month, Sales Person Title, Target. Kolom filter opsional mengikuti pilihan konfigurasi program.")
@@ -2216,8 +2217,7 @@ if main_section=="Program Push" and "_active_push_month" in dir() and not st.ses
                             "weekly_end_date":_weekly_end_date.isoformat() if _weekly_end_date else None,
                             "target_allocation_basis":_target_basis,
                             "target_total":float(_target_total)}
-            # Keep the Summary in sync with the current week/date widgets on the
-            # same rerun; the Save button persists these settings for later.
+            # Keep the Summary in sync with the current widgets on this rerun.
             _cfg_save.setdefault(_p,{}).update({
                 "weekly_target":float(_nweekly_target),
                 "weekly_target_percent":float(_nweekly_target_percent),
@@ -2227,6 +2227,12 @@ if main_section=="Program Push" and "_active_push_month" in dir() and not st.ses
                 "target_allocation_basis":_target_basis,
                 "target_total":float(_target_total),
             })
+
+        _cfg_save.update(_cfg_new)
+        if _this_month_cfg2 != _cfg_new:
+            _pbm_cfg2[_active_push_month] = _cfg_new
+            settings["program_config_by_month"] = _pbm_cfg2
+            save_settings(settings)
 
         if st.button(f"💾 Simpan konfigurasi {_active_push_month}",
                      key=f"save_pbm2_{_active_push_month}", type="primary"):
