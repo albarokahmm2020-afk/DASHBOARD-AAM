@@ -1378,8 +1378,12 @@ with st.sidebar:
                     st.session_state[state_key]=fingerprint
                     st.success(f"{path.name} diperbarui.")
             st.caption(f"File aktif: {path.name}" if path.exists() else f"File belum tersedia: {path.name}")
+    if not settings.get("program_selection_initialized"):
+        settings["programs"] = PROGRAMS.copy()
+        settings["program_selection_initialized"] = True
+        save_settings(settings)
     # Keep the active selection aligned with the persisted program list when
-    # that list changes in settings (for example after restoring all programs).
+    # that list changes in settings.
     _saved_programs = [p for p in settings.get("programs", PROGRAMS) if p in PROGRAMS]
     _programs_signature = tuple(_saved_programs)
     if st.session_state.get("_programs_signature") != _programs_signature:
