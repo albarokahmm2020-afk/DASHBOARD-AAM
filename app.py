@@ -821,6 +821,7 @@ _branch_choice=st.selectbox("Pilih Cabang",list(BRANCH_OPTIONS),format_func=lamb
 ACTIVE_BRANCH_CODE=_branch_choice
 ACTIVE_BRANCH_NAME=BRANCH_OPTIONS[ACTIVE_BRANCH_CODE]
 UI_ACCENT={"BDG":"#20B2AA","PTK":"#6366F1","MDN":"#28A745"}[ACTIVE_BRANCH_CODE]
+UI_HEADER_TINT={"BDG":"#E8F7F6","PTK":"#EEF0FF","MDN":"#FBF1E3"}[ACTIVE_BRANCH_CODE]
 BRANCH_THEMES={
     "BDG":{"red":"#C8102E","navy":"#000737","blue":"#22396F","midnight":"#0C1D42","cream":"#FCF1CF","landmarks":"GEDUNG SATE · PARIS VAN JAVA · KOTA KEMBANG"},
     "PTK":{"red":"#E36B55","navy":"#052B35","blue":"#087E83","midnight":"#0B414B","cream":"#E7FAF4","landmarks":"TUGU KHATULISTIWA · SUNGAI KAPUAS · KOTA KHATULISTIWA"},
@@ -1238,14 +1239,14 @@ section[data-testid='stSidebar'] p,
 section[data-testid='stSidebar'] label,
 section[data-testid='stSidebar'] [data-testid='stCaptionContainer'] {{ color: #334155 !important; }}
 .brand {{
-  background: #FFFFFF !important;
+  background: linear-gradient(110deg, #FFFFFF 0%, #FFFFFF 48%, {UI_HEADER_TINT} 100%) !important;
   border: 1px solid #E2E8F0 !important;
   border-top: 4px solid {UI_ACCENT} !important;
   border-left: 1px solid #E2E8F0 !important;
   border-radius: 10px !important;
   box-shadow: 0 2px 10px rgba(15,23,42,.08) !important;
 }}
-.brand-backdrop {{ opacity: .08 !important; }}
+.brand-backdrop {{ opacity: .16 !important; object-position: right center !important; }}
 .brand h1 {{ color: #0F172A !important; text-shadow: none !important; }}
 .brand-caption {{ color: #334155 !important; }}
 .brand-caption .bandung-badge {{
@@ -1254,7 +1255,13 @@ section[data-testid='stSidebar'] [data-testid='stCaptionContainer'] {{ color: #3
   color: #FFFFFF !important;
   box-shadow: none !important;
 }}
-.brand-landmark-label {{ display: none !important; }}
+.brand-landmark-label {{
+  display: block !important;
+  color: {UI_ACCENT} !important;
+  font-size: .62rem !important;
+  letter-spacing: .14em !important;
+  text-shadow: none !important;
+}}
 div[data-baseweb='select'] > div,
 input, textarea,
 [data-testid='stMultiSelect'] [role='group'],
@@ -1296,6 +1303,9 @@ button[kind='secondary'] {{
   box-shadow: none !important;
 }}
 div[data-testid='stRadio'] div[role='radiogroup'] {{ gap: 6px; flex-wrap: wrap; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label > div:first-child {{
+  display: none !important;
+}}
 div[data-testid='stRadio'] div[role='radiogroup'] label {{
   background: #E9ECEF;
   border: 1px solid #CBD5E1;
