@@ -833,6 +833,50 @@ def _drive_delete_file(file_name,category,branch=None):
     response.raise_for_status()
     return True
 
+def _operational_db_url():
+    """MongoDB Atlas URI stored in Streamlit Secrets as MONGODB_URI."""
+    try:
+        return str(st.secrets.get("MONGODB_URI", "")).strip()
+    except Exception:
+        return ""
+
+def _operational_db_save(file_name, payload, branch=None):
+    """Persist branch-scoped operational CSV bytes in MongoDB Atlas."""
+    uri=_operational_db_url()
+    if not uri:
+        return False
+    from datetime import datetime, timezone
+    from pymongo import MongoClient
+    document_id=f"{branch or ACTIVE_BRANCH_CODE}:{file_name}"
+    with MongoClient(uri,serverSelectionTimeoutMS=10000,connectTimeoutMS=10000,socketTimeoutMS=20000) as client:
+        collection=client["dashboard_aam"]["operational_files"]
+        collection.update_one(
+            {"_id":document_id},
+            {"$set":{"payload":bytes(payload),"updated_at":datetime.now(timezone.utc)}},
+            upsert=True,
+        )
+    return True
+
+def _operational_db_load(file_name, branch=None):
+    uri=_operational_db_url()
+    if not uri:
+        return None
+    from pymongo import MongoClient
+    document_id=f"{branch or ACTIVE_BRANCH_CODE}:{file_name}"
+    with MongoClient(uri,serverSelectionTimeoutMS=10000,connectTimeoutMS=10000,socketTimeoutMS=20000) as client:
+        row=client["dashboard_aam"]["operational_files"].find_one({"_id":document_id},{"payload":1})
+    return bytes(row["payload"]) if row and row.get("payload") is not None else None
+
+def _operational_db_delete(file_name, branch=None):
+    uri=_operational_db_url()
+    if not uri:
+        return False
+    from pymongo import MongoClient
+    document_id=f"{branch or ACTIVE_BRANCH_CODE}:{file_name}"
+    with MongoClient(uri,serverSelectionTimeoutMS=10000,connectTimeoutMS=10000,socketTimeoutMS=20000) as client:
+        client["dashboard_aam"]["operational_files"].delete_one({"_id":document_id})
+    return True
+
 def _as_download_bytes(data):
     if isinstance(data,bytes): return data
     if isinstance(data,(bytearray,memoryview)): return bytes(data)
@@ -879,15 +923,28 @@ DAILY_DISCIPLINE_PATH=APP_DIR/"daily_discipline_latest.csv" if ACTIVE_BRANCH_COD
 VISIT_LOG_PATH=APP_DIR/"visit_log.csv" if ACTIVE_BRANCH_CODE=="BDG" else BRANCH_DATA_DIR/"visit_log.csv"
 def _restore_drive_state():
     """Restore persistent operational files from Drive before loading app state."""
-    if not st.secrets.get("gcp_service_account") or st.session_state.get("_drive_state_restored_branch")==ACTIVE_BRANCH_CODE:
+    if st.session_state.get("_drive_state_restored_branch")==ACTIVE_BRANCH_CODE:
+        return
+    use_operational_db=bool(_operational_db_url())
+    if use_operational_db:
+        try:
+            for path,name in ((VISIT_LOG_PATH,"visit_log.csv"),(DAILY_DISCIPLINE_PATH,"daily_discipline_latest.csv")):
+                payload=_operational_db_load(name,ACTIVE_BRANCH_CODE)
+                if payload is not None:
+                    path.parent.mkdir(parents=True,exist_ok=True)
+                    path.write_bytes(payload)
+        except Exception:
+            st.warning("Penyimpanan database belum tersambung; data lokal tetap digunakan. Periksa MONGODB_URI dan akses Atlas.")
+    if not st.secrets.get("gcp_service_account"):
+        st.session_state["_drive_state_restored_branch"]=ACTIVE_BRANCH_CODE
         return
     files=[
         (SETTINGS_PATH,"dashboard_settings.json","settings"),
-        (VISIT_LOG_PATH,"visit_log.csv","visit_logs"),
-        (DAILY_DISCIPLINE_PATH,"daily_discipline_latest.csv","reports"),
         (OVERVIEW_DATA_DIR/"overview_calendar.xlsx","overview_calendar.xlsx","overview"),
         (OVERVIEW_DATA_DIR/"overview_fixed_call.xlsx","overview_fixed_call.xlsx","overview"),
     ]
+    if not use_operational_db:
+        files[1:1]=[(VISIT_LOG_PATH,"visit_log.csv","visit_logs"),(DAILY_DISCIPLINE_PATH,"daily_discipline_latest.csv","reports")]
     try:
         for path,name,category in files:
             _drive_download_to_path(name,path,category,ACTIVE_BRANCH_CODE)
@@ -4137,7 +4194,10 @@ elif main_section=="Report":
                     DAILY_DISCIPLINE_PATH.parent.mkdir(parents=True,exist_ok=True)
                     _discipline_csv=discipline_df.to_csv(index=False).encode("utf-8-sig")
                     DAILY_DISCIPLINE_PATH.write_bytes(_discipline_csv)
-                    if st.secrets.get("gcp_service_account"):
+                    if _operational_db_url():
+                        try: _operational_db_save(DAILY_DISCIPLINE_PATH.name,_discipline_csv,ACTIVE_BRANCH_CODE)
+                        except Exception: st.error("Data kedisiplinan tersimpan lokal, tetapi gagal tersinkron ke database Atlas. Periksa MONGODB_URI dan akses Atlas.")
+                    elif st.secrets.get("gcp_service_account"):
                         try: _drive_upload_bytes(DAILY_DISCIPLINE_PATH.name,_discipline_csv,"text/csv","reports",ACTIVE_BRANCH_CODE)
                         except Exception as exc: st.error(f"Data kedisiplinan tersimpan lokal, tetapi gagal disinkronkan ke Google Drive: {exc}")
             except Exception as _discipline_error:
@@ -7027,7 +7087,10 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                     if not combined.equals(existing_visit_log.reindex(columns=all_visit_columns,fill_value="").fillna("").astype(str)):
                         _visit_csv=combined.to_csv(index=False).encode("utf-8-sig")
                         VISIT_LOG_PATH.write_bytes(_visit_csv)
-                        if st.secrets.get("gcp_service_account"):
+                        if _operational_db_url():
+                            try: _operational_db_save(VISIT_LOG_PATH.name,_visit_csv,ACTIVE_BRANCH_CODE)
+                            except Exception: st.error("Log kunjungan tersimpan lokal, tetapi gagal tersinkron ke database Atlas. Periksa MONGODB_URI dan akses Atlas.")
+                        elif st.secrets.get("gcp_service_account"):
                             try: _drive_upload_bytes(VISIT_LOG_PATH.name,_visit_csv,"text/csv","visit_logs",ACTIVE_BRANCH_CODE)
                             except Exception as exc: st.error(f"Log kunjungan tersimpan sementara, tetapi gagal disinkronkan ke Google Drive: {exc}")
                     # Export — sertakan tanggal & info sesi di nama file
@@ -7095,7 +7158,10 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                                 # Tombol hapus semua log
                                 if st.button("🗑 Hapus Semua Data Riwayat",key="delete_visit_log",type="secondary"):
                                     VISIT_LOG_PATH.unlink(missing_ok=True)
-                                    if st.secrets.get("gcp_service_account"):
+                                    if _operational_db_url():
+                                        try: _operational_db_delete(VISIT_LOG_PATH.name,ACTIVE_BRANCH_CODE)
+                                        except Exception: st.error("Log lokal terhapus, tetapi gagal dihapus dari database Atlas. Periksa MONGODB_URI dan akses Atlas.")
+                                    elif st.secrets.get("gcp_service_account"):
                                         try: _drive_delete_file(VISIT_LOG_PATH.name,"visit_logs",ACTIVE_BRANCH_CODE)
                                         except Exception as exc: st.error(f"Log lokal terhapus, tetapi gagal dihapus dari Google Drive: {exc}")
                                     st.warning("Database riwayat kunjungan telah dihapus.")

@@ -7,3 +7,4 @@ requests>=2.31,<3
 google-auth>=2.35,<3
 python-pptx>=1.0,<2
 Pillow>=10,<13
+pymongo>=4.10,<5
