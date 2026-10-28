@@ -5958,6 +5958,135 @@ elif page=="Summary Program":
 <div class='score-insight insight-{insight_level}'><b>AI Insight:</b> <span class='insight-status insight-status-{insight_level}'>{safe(insight_status)}</span><br>{insight_html}</div>
 </div>"""
             st.markdown(card_html,unsafe_allow_html=True)
+    if summary_insight_data:
+        st.markdown("#### Executive overview")
+        _summary_metrics=st.columns(4)
+        _summary_metrics_values=[item["actual"] for item in summary_insight_data]
+        _summary_targets=[item["target"] for item in summary_insight_data]
+        _summary_metric_types={item["selected"]["metric"] for item in summary_insight_data}
+        _summary_same_unit=len(_summary_metric_types)==1
+        _summary_metric_type=next(iter(_summary_metric_types)) if _summary_same_unit else None
+        _summary_actual_complete=all(value is not None and pd.notna(value) for value in _summary_metrics_values)
+        _summary_target_complete=all(value is not None and pd.notna(value) for value in _summary_targets)
+        _summary_actual_total=sum(float(value) for value in _summary_metrics_values if value is not None and pd.notna(value))
+        _summary_target_total=sum(float(value) for value in _summary_targets if value is not None and pd.notna(value))
+        _summary_total_achievement=None
+        if _summary_same_unit and _summary_actual_complete and _summary_target_complete and _summary_target_total>0:
+            _summary_total_achievement=_summary_actual_total/_summary_target_total*100
+        _summary_met_targets=sum(
+            1 for item in summary_insight_data
+            if item["target"] is not None and float(item["target"] or 0)>0
+            and item["actual"] is not None and float(item["actual"])>=float(item["target"])
+        )
+        with _summary_metrics[0]:
+            st.metric(
+                "Total Actual",
+                fmt_summary(_summary_actual_total,_summary_metric_type)
+                if _summary_same_unit and _summary_actual_complete else ("Campuran" if not _summary_same_unit else "—"),
+            )
+        with _summary_metrics[1]:
+            st.metric(
+                "Total Target",
+                fmt_summary(_summary_target_total,_summary_metric_type)
+                if _summary_same_unit and _summary_target_complete else ("Campuran" if not _summary_same_unit else "Belum lengkap"),
+            )
+        with _summary_metrics[2]:
+            st.metric(
+                "Achievement",
+                f"{_summary_total_achievement:,.1f}%" if _summary_total_achievement is not None else "—",
+                help="Tidak dihitung jika satuan program berbeda atau target belum lengkap.",
+            )
+        with _summary_metrics[3]:
+            st.metric("Program tercapai",f"{_summary_met_targets}/{len(summary_insight_data)}")
+
+        _overview_cols=st.columns([1.15,.85],gap="large")
+        _overview_rows=[
+            {
+                "Program":item["label"],
+                "Actual":float(item["actual"]) if item["actual"] is not None and pd.notna(item["actual"]) else None,
+                "Target":float(item["target"]) if item["target"] is not None and pd.notna(item["target"]) else None,
+                "A/T (%)":float(item["achievement"]) if item["achievement"] is not None and pd.notna(item["achievement"]) else None,
+                "Status":(
+                    "Rendah" if item["achievement"] is None or item["achievement"]<60
+                    else "Sedang" if item["achievement"]<90 else "Tercapai"
+                ),
+            }
+            for item in summary_insight_data
+        ]
+        _overview_df=pd.DataFrame(_overview_rows)
+        with _overview_cols[0]:
+            st.markdown("**Actual vs Target per Program**")
+            if _summary_same_unit:
+                _overview_chart=alt.Chart(_overview_df).transform_fold(
+                    ["Actual","Target"],as_=["Jenis","Nilai"]
+                ).mark_bar(size=22,tooltip=False).encode(
+                    y=alt.Y(
+                        "Program:N",
+                        sort=alt.EncodingSortField(field="Actual",order="descending"),
+                        title=None,
+                    ),
+                    x=alt.X("Nilai:Q",title="Actual / Target",axis=alt.Axis(format="~s")),
+                    xOffset=alt.XOffset("Jenis:N"),
+                    color=alt.Color(
+                        "Jenis:N",
+                        scale=alt.Scale(domain=["Actual","Target"],range=["#20B2AA","#CBD5E1"]),
+                        legend=alt.Legend(orient="top",direction="horizontal",title=None),
+                    ),
+                ).properties(height=max(220,42*len(_overview_df)))
+                _overview_chart=_overview_chart.configure(
+                    background="#FFFFFF",
+                ).configure_view(
+                    fill="#FFFFFF",stroke="#E2E8F0",
+                ).configure_axis(
+                    labelColor="#526176",titleColor="#3E4D62",
+                    gridColor="#E0E6ED",domainColor="#CBD4DF",
+                ).configure_legend(
+                    labelColor="#46566B",
+                )
+                st.altair_chart(_overview_chart,width="stretch")
+            else:
+                st.info("Grafik Actual vs Target disembunyikan karena program memakai satuan yang berbeda.")
+        with _overview_cols[1]:
+            st.markdown("**Pencapaian A/T per Program**")
+            _achievement_df=_overview_df.dropna(subset=["A/T (%)"]).copy()
+            if not _achievement_df.empty:
+                _achievement_chart=alt.Chart(_achievement_df).mark_bar(tooltip=False).encode(
+                    y=alt.Y(
+                        "Program:N",
+                        sort=alt.EncodingSortField(field="A/T (%)",order="descending"),
+                        title=None,
+                    ),
+                    x=alt.X(
+                        "A/T (%):Q",
+                        title="Achievement",
+                        scale=alt.Scale(domainMin=0),
+                        axis=alt.Axis(labelExpr="datum.value + '%'"),
+                    ),
+                    color=alt.Color(
+                        "Status:N",
+                        scale=alt.Scale(
+                            domain=["Rendah","Sedang","Tercapai"],
+                            range=["#C8102E","#F5C542","#39C77B"],
+                        ),
+                        legend=None,
+                    ),
+                )
+                _target_rule=alt.Chart(pd.DataFrame({"target":[100]})).mark_rule(
+                    color="#64748B",strokeDash=[5,4],tooltip=False,
+                ).encode(x=alt.X("target:Q"))
+                _achievement_chart=alt.layer(_achievement_chart,_target_rule).properties(
+                    height=max(220,42*len(_achievement_df)),
+                ).configure(
+                    background="#FFFFFF",
+                ).configure_view(
+                    fill="#FFFFFF",stroke="#E2E8F0",
+                ).configure_axis(
+                    labelColor="#526176",titleColor="#3E4D62",
+                    gridColor="#E0E6ED",domainColor="#CBD4DF",
+                )
+                st.altair_chart(_achievement_chart,width="stretch")
+            else:
+                st.info("Pencapaian A/T akan muncul setelah actual dan target tersedia.")
     if not programs: st.info("Pilih minimal satu program dari panel kiri.")
     elif summary_insight_data:
         st.markdown("#### 🧠 AI Insight · Strategi On Target Program Push")
