@@ -6842,8 +6842,8 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
     with daily_filter_cols[2]:
         visit_titles=filter_select(df,"salesperson","Sales Person Title","daily_visit_title_filter")
     if not visit_titles:
-        visit_titles=filter_options(df,"salesperson")
-        st.caption("Belum memilih Sales Person Title: semua salesperson ditampilkan. Gunakan filter di atas untuk mempersempit daftar.")
+        st.info("Pilih Sales Person Title terlebih dahulu untuk menampilkan tabel sasaran kunjungan harian.")
+        st.stop()
     def _daily_selected_values(value):
         if value in (None,"All","ALL",""): return []
         return list(value) if isinstance(value,(list,tuple,set)) else [value]
@@ -6989,9 +6989,10 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                     _source_customer_keys=df[history_customer_col].astype("string").str.strip().str.casefold().str.replace(r"\s+"," ",regex=True)
                     _pair_mask=_source_title_keys.isin(_wanted_titles)&_source_customer_keys.isin(_wanted_customers)
                     _active_config_month=MONTHS.get(int(month_value),str(month_value)) if pd.notna(month_value) else list(MONTHS.values())[pd.Timestamp(selected_date).month-1]
-                    historical_pairs_by_program={}
-                    _transaction_date_col=col(df,"date")
-                    _period_start=pd.Timestamp(int(year_value),int(month_value),1) if pd.notna(year_value) and pd.notna(month_value) else pd.Timestamp(selected_date).to_period("M").start_time
+                    history_average_by_program={}
+                    _history_month_count=max(0,int(month_value)-1)
+                    _history_months=[MONTHS[month_number] for month_number in range(1,int(month_value))]
+                    _history_sales_col=col(df,"sales")
                     for _prog in programs:
                         _program_config=apply_active_program_config(_prog,{},config_month=_active_config_month)
                         _current_scope=filtered_data(_program_config)
@@ -7003,18 +7004,20 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                         else:
                             current_pairs_by_program[_prog]=set()
                         _history_config=dict(_program_config)
-                        _history_config["year"]=[]; _history_config["month"]=[]
-                        _history_scope=filtered_data(_history_config)
+                        _history_config["year"]=[str(int(year_value))]
+                        _history_config["month"]=_history_months
+                        _history_scope=filtered_data(_history_config) if _history_months else df.iloc[0:0].copy()
                         _history_scope=_history_scope.loc[_pair_mask.reindex(_history_scope.index,fill_value=False)]
-                        if _transaction_date_col and _transaction_date_col in _history_scope.columns:
-                            _history_dates=pd.to_datetime(_history_scope[_transaction_date_col],errors="coerce")
-                            _history_scope=_history_scope.loc[_history_dates<_period_start]
-                        _history_positive=positive_sales_rows(_history_scope)
-                        if _history_positive is not None and not _history_positive.empty:
-                            _history_valid=_history_positive.dropna(subset=[history_title_col,history_customer_col])
-                            historical_pairs_by_program[_prog]={relation_key(title,customer) for title,customer in zip(_history_valid[history_title_col],_history_valid[history_customer_col])}
+                        if not _history_scope.empty and _history_sales_col:
+                            _history_valid=_history_scope.dropna(subset=[history_title_col,history_customer_col]).copy()
+                            _history_valid["_history_sales_value"]=pd.to_numeric(_history_valid[_history_sales_col],errors="coerce").fillna(0)
+                            _history_totals=_history_valid.groupby([history_title_col,history_customer_col],dropna=False)["_history_sales_value"].sum()
+                            history_average_by_program[_prog]={
+                                relation_key(title,customer):float(total)/_history_month_count
+                                for (title,customer),total in _history_totals.items()
+                            } if _history_month_count else {}
                         else:
-                            historical_pairs_by_program[_prog]=set()
+                            history_average_by_program[_prog]={}
                     bought_keys_by_program=current_pairs_by_program
                     daily_rows=[]
                     for _,fixed_row in daily.iterrows():
@@ -7022,14 +7025,14 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                         relation=str(fixed_row[fc_customer]).strip()
                         pair_key=relation_key(title,relation)
                         row={"Sales Person Title":title,"Relasi":relation}
-                        # Kelompokkan seluruh kolom riwayat berdampingan setelah
-                        # Relasi; status transaksi periode berjalan berada di ujung.
+                        # Keep historical monthly averages grouped before current-month status.
                         for prog in programs:
                             _compact_program=program_label(prog).replace("RB ","").replace("SALES ","")
-                            row[f"H · {_compact_program}"]="✓" if pair_key in historical_pairs_by_program.get(prog,set()) else ""
+                            _history_average=history_average_by_program.get(prog,{}).get(pair_key)
+                            row[f"HIST AVG · {_compact_program}"]=f"Rp {_history_average:,.0f}" if _history_average is not None else "—"
                         for prog in programs:
                             _compact_program=program_label(prog).replace("RB ","").replace("SALES ","")
-                            row[f"ACT · {_compact_program}"]="✓" if pair_key in bought_keys_by_program.get(prog,set()) else ""
+                            row[f"ACTUAL · {_compact_program}"]="✓" if pair_key in bought_keys_by_program.get(prog,set()) else "—"
                         daily_rows.append(row)
                     bought_keys_by_program=current_pairs_by_program
                     daily_targets=pd.DataFrame(daily_rows)
@@ -7046,18 +7049,35 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                             for _,row in saved_for_date.iterrows()
                         }
                     daily_targets["Reason"]=[saved_reason_by_pair.get(relation_key(title,relasi),"") for title,relasi in zip(daily_targets["Sales Person Title"],daily_targets["Relasi"])]
-                    st.caption(f"{pd.Timestamp(selected_date):%d %B %Y} · {day_value.title()} · Week {int(week_value)} · {len(daily_targets):,} relasi rute. H = history sebelum bulan berjalan; ACT = transaksi bulan berjalan.")
+                    st.caption(f"{pd.Timestamp(selected_date):%d %B %Y} · {day_value.title()} · Week {int(week_value)} · {len(daily_targets):,} relasi rute. AVG H = rata-rata Sales bulanan dari Januari sampai {MONTHS.get(int(month_value)-1,'belum tersedia')} {int(year_value)}; ACT = transaksi positif pada bulan berjalan.")
                     # Bangun column_config: kolom program diberi warna via help text,
                     # kolom Reason bisa diedit bebas
-                    _history_labels=[f"H · {program_label(prog).replace('RB ','').replace('SALES ','')}" for prog in programs]
-                    _actual_labels=[f"ACT · {program_label(prog).replace('RB ','').replace('SALES ','')}" for prog in programs]
+                    _history_labels=[f"HIST AVG · {program_label(prog).replace('RB ','').replace('SALES ','')}" for prog in programs]
+                    _actual_labels=[f"ACTUAL · {program_label(prog).replace('RB ','').replace('SALES ','')}" for prog in programs]
                     col_cfg={
                         "Sales Person Title":st.column_config.TextColumn("Sales Person Title",disabled=True,width="medium"),
                         "Relasi":st.column_config.TextColumn("Relasi",disabled=True,width="medium"),
-                        **{_history_labels[i]:st.column_config.TextColumn(_history_labels[i],disabled=True,width="small",help=f"✓ = ada transaksi positif sebelumnya untuk {program_label(prog)}.") for i,prog in enumerate(programs)},
+                        **{_history_labels[i]:st.column_config.TextColumn(_history_labels[i],disabled=True,width="medium",help=f"Rata-rata Sales Value Gross per bulan dari Januari sampai {MONTHS.get(int(month_value)-1,'belum tersedia')} {int(year_value)} untuk {program_label(prog)}.") for i,prog in enumerate(programs)},
                         **{_actual_labels[i]:st.column_config.TextColumn(_actual_labels[i],disabled=True,width="small",help=f"✓ = ada transaksi pada bulan berjalan untuk {program_label(prog)}.") for i,prog in enumerate(programs)},
                         "Reason":st.column_config.TextColumn("Reason",help="Isi catatan / reason hasil kunjungan one-on-one dengan salesman",width="medium"),
                     }
+                    st.markdown("""
+                    <style>
+                    div[data-testid='stDataEditor'] {
+                      --gdg-text-dark: #1E293B;
+                      --gdg-text-medium: #334155;
+                      --gdg-text-header: #FFFFFF;
+                      --gdg-bg-cell: #F4F7FB;
+                      --gdg-bg-cell-medium: #E8EEF6;
+                      --gdg-bg-header: #335A9F;
+                      --gdg-bg-header-hover: #24477F;
+                      border: 1px solid #D5DEEA !important;
+                      border-top: 1px solid #D5DEEA !important;
+                      border-radius: 8px !important;
+                      box-shadow: 0 2px 8px rgba(15,23,42,.08) !important;
+                    }
+                    </style>
+                    """,unsafe_allow_html=True)
                     edited_daily=st.data_editor(
                         daily_targets,
                         width="stretch",
