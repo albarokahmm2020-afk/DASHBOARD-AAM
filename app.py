@@ -1177,7 +1177,7 @@ st.markdown("""
   .brand,
   .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"],
   section[data-testid="stSidebar"] [data-testid="stElementContainer"] {
-    animation: dashboard-enter .62s cubic-bezier(.16, 1, .3, 1) both;
+    animation: dashboard-enter .62s cubic-bezier(.22, 1, .36, 1) both;
   }
   .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(2) { animation-delay: .05s; }
   .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(3) { animation-delay: .1s; }
@@ -1185,7 +1185,7 @@ st.markdown("""
   .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(5) { animation-delay: .2s; }
   .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(n+6) { animation-delay: .25s; }
   div[data-testid="stMetric"] {
-    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    transition: transform .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s cubic-bezier(.22, 1, .36, 1), border-color .2s cubic-bezier(.22, 1, .36, 1);
   }
   div[data-testid="stMetric"]:hover {
     transform: translateY(-2px);
@@ -1209,7 +1209,10 @@ st.markdown("""
   .monitoring-sales-card:hover,
   .monitoring-sales-fot:hover,
   div[data-testid="stMetric"]:hover,
-  button[kind="primary"]:hover {
+  button[kind="primary"]:hover,
+  button[kind="primary"]:active,
+  button[kind="secondary"]:active,
+  div[data-testid='stRadio'] div[role='radiogroup'] label:active {
     transform: none !important;
   }
 }
@@ -1221,7 +1224,7 @@ st.markdown(f"""
 html, body, .stApp {{
   background: #F8F9FA !important;
   color: #1E293B !important;
-  font-family: 'Segoe UI', Tahoma, Inter, system-ui, -apple-system, Arial, sans-serif !important;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }}
 .stApp {{ background-image: none !important; }}
 .stMainBlockContainer {{ background: transparent !important; }}
@@ -1303,6 +1306,32 @@ button[kind='secondary'] {{
   color: #334155 !important;
   box-shadow: none !important;
 }}
+button[kind='primary']:active,
+button[kind='secondary']:active {{
+  transform: scale(.98);
+}}
+button[kind='primary'],
+button[kind='secondary'],
+div[data-testid='stMetric'],
+.scorecard,
+.monitoring-sales-card,
+.monitoring-sales-fot,
+div[data-testid='stRadio'] div[role='radiogroup'] label {{
+  transition-duration: 200ms !important;
+  transition-timing-function: cubic-bezier(.22, 1, .36, 1) !important;
+}}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role='combobox']:focus-visible,
+[role='button']:focus-visible,
+[role='radio']:focus-visible,
+div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:focus-visible) {{
+  outline: 3px solid {UI_ACCENT} !important;
+  outline-offset: 2px !important;
+}}
 div[data-testid='stRadio'] div[role='radiogroup'] {{
   align-items: center;
   gap: 6px;
@@ -1325,7 +1354,7 @@ div[data-testid='stRadio'] div[role='radiogroup'] label {{
   border: 1px solid #CBD5E1;
   border-radius: 6px;
   padding: 7px 14px;
-  transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease;
+  transition: background-color .2s cubic-bezier(.22, 1, .36, 1), border-color .2s cubic-bezier(.22, 1, .36, 1), color .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s cubic-bezier(.22, 1, .36, 1);
 }}
 div[data-testid='stRadio'] div[role='radiogroup'] label p {{
   color: #334155 !important;
@@ -1392,7 +1421,7 @@ div[data-testid='stMetric'] [data-testid='stMetricValue'] {{
   padding: 14px 15px;
   min-height: 82px;
   box-shadow: 0 2px 8px rgba(15,23,42,.08);
-  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+  transition: transform .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s cubic-bezier(.22, 1, .36, 1), border-color .2s cubic-bezier(.22, 1, .36, 1);
 }}
 .monitoring-sales-card--orange {{ border-top-color: #FF9800; }}
 .monitoring-sales-card:hover {{
@@ -1429,7 +1458,7 @@ div[data-testid='stMetric'] [data-testid='stMetricValue'] {{
   font-size: .76rem;
   font-weight: 800;
   box-shadow: 0 2px 8px rgba(15,23,42,.08);
-  transition: transform .2s ease, box-shadow .2s ease;
+  transition: transform .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s cubic-bezier(.22, 1, .36, 1);
 }}
 .monitoring-sales-fot:hover {{
   transform: translateY(-4px);
