@@ -697,6 +697,9 @@ BRANCH_OPTIONS={"BDG":"Bandung","PTK":"Pontianak","MDN":"Medan"}
 # Folder link provided by the user. An explicit file ID in secrets overrides it.
 DEFAULT_DRIVE_DATABASE_FOLDER_ID="1Ef0DsWdqJ-fy7ahuQ0NR3H1dO2QkHk4b"
 DEFAULT_DRIVE_STORAGE_FOLDER_ID="1E88RgFi_zTHzsJZzD0RVztdcS5Wecc6e"
+class _DriveStorageFolderNotSharedDriveError(RuntimeError):
+    pass
+
 def _drive_service_credentials():
     """Build credentials with write access limited by the service account's Drive sharing."""
     from google.oauth2.service_account import Credentials
@@ -740,7 +743,7 @@ def _drive_storage_folder(category, branch=None):
     response.raise_for_status()
     root=response.json()
     if root.get("mimeType")!="application/vnd.google-apps.folder" or not root.get("driveId"):
-        raise RuntimeError("storage_folder_id bukan folder di Shared Drive. Gunakan ID folder tujuan dari Shared Drive, bukan folder My Drive atau database_folder_id.")
+        raise _DriveStorageFolderNotSharedDriveError("storage_folder_id bukan folder di Shared Drive.")
     if root.get("capabilities",{}).get("canAddChildren") is False:
         raise RuntimeError("Akun layanan dapat melihat Shared Drive tetapi tidak dapat menambah file. Berikan peran Kontributor atau Pengelola Konten.")
     folder_id=_drive_folder_id("Dashboard_Data" if category!="exports" else "Dashboard_Exports",root_id)
@@ -923,7 +926,10 @@ DAILY_DISCIPLINE_PATH=APP_DIR/"daily_discipline_latest.csv" if ACTIVE_BRANCH_COD
 VISIT_LOG_PATH=APP_DIR/"visit_log.csv" if ACTIVE_BRANCH_CODE=="BDG" else BRANCH_DATA_DIR/"visit_log.csv"
 def _restore_drive_state():
     """Restore persistent operational files from Drive before loading app state."""
-    if st.session_state.get("_drive_state_restored_branch")==ACTIVE_BRANCH_CODE:
+    if (
+        st.session_state.get("_drive_state_restored_branch")==ACTIVE_BRANCH_CODE
+        or st.session_state.get("_drive_state_restore_skipped_branch")==ACTIVE_BRANCH_CODE
+    ):
         return
     use_operational_db=bool(_operational_db_url())
     if use_operational_db:
@@ -963,6 +969,9 @@ def _restore_drive_state():
             payload.raise_for_status()
             (PROGRAM_TARGET_DIR/item["name"]).write_bytes(payload.content)
         st.session_state["_drive_state_restored_branch"]=ACTIVE_BRANCH_CODE
+    except _DriveStorageFolderNotSharedDriveError:
+        # Optional Drive restoration is skipped; local files and MongoDB remain available.
+        st.session_state["_drive_state_restore_skipped_branch"]=ACTIVE_BRANCH_CODE
     except Exception as exc:
         st.warning(f"Tidak dapat memuat file simpanan dari Google Drive: {exc}")
 _restore_drive_state()
