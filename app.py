@@ -1302,23 +1302,53 @@ button[kind='secondary'] {{
   color: #334155 !important;
   box-shadow: none !important;
 }}
-div[data-testid='stRadio'] div[role='radiogroup'] {{ gap: 6px; flex-wrap: wrap; }}
-div[data-testid='stRadio'] div[role='radiogroup'] label > div:first-child {{
+div[data-testid='stRadio'] div[role='radiogroup'] {{
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+}}
+div[data-testid='stRadio'] div[role='radiogroup'] label:has(input[type='radio']) > div:first-child,
+div[data-testid='stRadio'] div[role='radiogroup'] label:has(input[type='radio']) > input[type='radio'],
+div[data-testid='stRadio'] div[role='radiogroup'] label:has(input[type='radio']) svg {{
   display: none !important;
 }}
 div[data-testid='stRadio'] div[role='radiogroup'] label {{
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #E9ECEF;
-  border: 1px solid #CBD5E1;
-  border-radius: 6px;
-  padding: 7px 14px;
+  border: 2px solid #CBD5E1;
+  border-radius: 11px;
+  padding: 12px 28px;
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease;
 }}
-div[data-testid='stRadio'] div[role='radiogroup'] label p {{ color: #334155 !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label p {{
+  color: #334155 !important;
+  font-size: 1.16rem !important;
+  font-weight: 750 !important;
+  line-height: 1.25 !important;
+  margin: 0 !important;
+}}
 div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) {{
   background: {UI_ACCENT} !important;
   border-color: {UI_ACCENT} !important;
+  box-shadow: 0 2px 6px rgba(15,23,42,.12);
 }}
 div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) p {{
   color: #FFFFFF !important;
+}}
+div[data-testid='stRadio'] div[role='radiogroup'] label:hover:not(:has(input:checked)) {{
+  background: #F1F4F7;
+  border-color: {UI_ACCENT};
+}}
+@media (max-width: 700px) {{
+  div[data-testid='stRadio'] div[role='radiogroup'] {{ gap: 7px; }}
+  div[data-testid='stRadio'] div[role='radiogroup'] label {{
+    min-height: 44px;
+    padding: 9px 14px;
+  }}
+  div[data-testid='stRadio'] div[role='radiogroup'] label p {{ font-size: .96rem !important; }}
 }}
 div[data-testid='stMetric'], .scorecard, .score-heading,
 details[data-testid='stExpander'],
