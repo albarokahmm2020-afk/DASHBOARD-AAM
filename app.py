@@ -1379,9 +1379,10 @@ div[data-testid='stMetric'] [data-testid='stMetricValue'] {{
 .score-filter, .score-ach, .weekly-plot-label {{ color: #64748B !important; }}
 .weekly-plot-track {{ background: #E9ECEF !important; border-color: #DDE4EC !important; }}
 .score-insight {{ color: #475569 !important; }}
-.insight-low {{ background: #FEF2F2 !important; border-left-color: #EF4444 !important; }}
+.insight-low {{ background: #FEF2F2 !important; border-left-color: {RED} !important; }}
 .insight-medium {{ background: #FFFBEB !important; border-left-color: #F59E0B !important; }}
 .insight-good {{ background: #F0FDF4 !important; border-left-color: #22C55E !important; }}
+.insight-status-low {{ background: {RED} !important; color: #FFFFFF !important; }}
 .monitoring-sales-card {{
   background: #FFFFFF;
   border: 1px solid #E2E8F0;
