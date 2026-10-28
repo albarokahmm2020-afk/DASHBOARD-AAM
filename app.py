@@ -748,11 +748,14 @@ def _drive_upload_bytes(file_name,payload,mime_type="application/octet-stream",c
         "supportsAllDrives":"true","includeItemsFromAllDrives":"true",
     },timeout=30)
     response.raise_for_status()
+    matches=response.json().get("files",[])
+    metadata={"name":str(file_name),"mimeType":mime_type}
+    if not matches:
+        metadata["parents"]=[folder_id]
     boundary="codex_"+uuid.uuid4().hex
     body=(f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+
-          json.dumps({"name":str(file_name),"mimeType":mime_type},ensure_ascii=False)+
+          json.dumps(metadata,ensure_ascii=False)+
           f"\r\n--{boundary}\r\nContent-Type: {mime_type}\r\n\r\n").encode("utf-8")+payload+f"\r\n--{boundary}--".encode("utf-8")
-    matches=response.json().get("files",[])
     if matches:
         url=f"https://www.googleapis.com/upload/drive/v3/files/{matches[0]['id']}"
         response=session.patch(url,params={"uploadType":"multipart","supportsAllDrives":"true"},
@@ -761,6 +764,25 @@ def _drive_upload_bytes(file_name,payload,mime_type="application/octet-stream",c
         url="https://www.googleapis.com/upload/drive/v3/files"
         response=session.post(url,params={"uploadType":"multipart","supportsAllDrives":"true"},
             data=body,headers={"Content-Type":f"multipart/related; boundary={boundary}"},timeout=120)
+    if response.status_code==403:
+        try:
+            drive_error=response.json().get("error",{})
+            drive_message=drive_error.get("message","Izin ditolak oleh Google Drive.")
+            drive_reasons={
+                item.get("reason","")
+                for item in drive_error.get("errors",[])
+                if isinstance(item,dict)
+            }
+        except (ValueError, AttributeError):
+            drive_message="Izin ditolak oleh Google Drive."
+            drive_reasons=set()
+        if "storageQuotaExceeded" in drive_reasons:
+            guidance="Pastikan folder tujuan berada di Shared Drive dan akun layanan memiliki peran Kontributor atau Pengelola Konten."
+        elif drive_reasons.intersection({"insufficientFilePermissions","insufficientPermissions","teamDriveMembershipRequired"}):
+            guidance="Periksa akses akun layanan pada folder tujuan; untuk Shared Drive, berikan minimal peran Kontributor."
+        else:
+            guidance="Periksa izin tulis akun layanan dan konfigurasi folder tujuan Google Drive."
+        raise RuntimeError(f"Google Drive menolak upload (403): {drive_message} {guidance}")
     response.raise_for_status()
     return response.json().get("id")
 
@@ -4102,7 +4124,7 @@ elif main_section=="Report":
                     DAILY_DISCIPLINE_PATH.write_bytes(_discipline_csv)
                     if st.secrets.get("gcp_service_account"):
                         try: _drive_upload_bytes(DAILY_DISCIPLINE_PATH.name,_discipline_csv,"text/csv","reports",ACTIVE_BRANCH_CODE)
-                        except Exception as exc: st.error(f"Laporan tersimpan sementara, tetapi gagal disinkronkan ke Google Drive: {exc}")
+                        except Exception as exc: st.error(f"Data kedisiplinan tersimpan lokal, tetapi gagal disinkronkan ke Google Drive: {exc}")
             except Exception as _discipline_error:
                 st.error(f"File kedisiplinan tidak dapat dibaca: {_discipline_error}")
         if discipline_df is None:
