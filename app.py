@@ -4411,8 +4411,8 @@ elif main_section=="Report":
             return min(440, max(180, 38 + len(table) * row_height))
         st.markdown(f"""
         <style>
-        div[data-testid='stDataFrame'] .stDataFrameGlideDataEditor,
-        div[data-testid='stDataEditor'] .stDataFrameGlideDataEditor {{
+        div[data-testid='stDataFrame'],
+        div[data-testid='stDataEditor'] {{
           color-scheme: light !important;
           --gdg-text-dark: #1B2E46 !important;
           --gdg-text-medium: #334155 !important;
@@ -4421,11 +4421,7 @@ elif main_section=="Report":
           --gdg-bg-cell: #F4F7FB !important;
           --gdg-bg-cell-medium: #E8EEF6 !important;
           --gdg-bg-header: #335A9F !important;
-          --gdg-bg-header-hovered: #24477F !important;
-          --gdg-bg-header-has-focus: #24477F !important;
-          --gdg-bg-header-selected: #24477F !important;
-          --gdg-border-color: #D4DEEA !important;
-          --gdg-horizontal-border-color: #D4DEEA !important;
+          --gdg-bg-header-hover: #24477F !important;
         }}
         </style>
         """,unsafe_allow_html=True)
