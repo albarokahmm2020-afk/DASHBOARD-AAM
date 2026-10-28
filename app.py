@@ -14,8 +14,8 @@ import altair as alt
 
 st.session_state["_drive_copy_button_counter"] = 0
 
-_streamlit_dataframe = st.dataframe
-_streamlit_data_editor = st.data_editor
+_streamlit_dataframe = st._main.dataframe
+_streamlit_data_editor = st._main.data_editor
 
 def _all_rows_table_kwargs(data, kwargs, row_height):
     source = data.data if not isinstance(data, pd.DataFrame) and isinstance(getattr(data, "data", None), pd.DataFrame) else data
@@ -63,10 +63,11 @@ def _color_performance_columns(table):
         if any(token in str(column).strip().casefold() for token in ("dev", "deviation", "gap"))
     ]
     styled = table if is_styler else table.style
+    table_accent = globals().get("UI_ACCENT", "#20B2AA")
     row_backgrounds = ["#FFFFFF" if index % 2 == 0 else "#F3F6FB" for index in range(len(source))]
     styled = styled.set_table_styles([
         {"selector": "table", "props": [("border-collapse", "collapse"), ("width", "100%"), ("border", "1px solid #DFE6F0"), ("background-color", "#FFFFFF")]},
-        {"selector": "th", "props": [("background", UI_ACCENT), ("color", "#FFFFFF"), ("font-weight", "700"), ("font-size", "12.5px"), ("line-height", "1.2"), ("border", "1px solid rgba(15,23,42,.12)"), ("padding", "8px 7px"), ("text-align", "left"), ("white-space", "nowrap")]},
+        {"selector": "th", "props": [("background", table_accent), ("color", "#FFFFFF"), ("font-weight", "700"), ("font-size", "12.5px"), ("line-height", "1.2"), ("border", "1px solid rgba(15,23,42,.12)"), ("padding", "8px 7px"), ("text-align", "left"), ("white-space", "nowrap")]},
         {"selector": "td", "props": [("font-size", "12.5px"), ("line-height", "1.2"), ("border", "1px solid #E3E9F2"), ("color", "#22304A"), ("padding", "7px 7px"), ("white-space", "nowrap")]},
         {"selector": "td:first-child", "props": [("font-weight", "600")]},
     ], overwrite=False)
@@ -78,7 +79,7 @@ def _color_performance_columns(table):
             for value in row.tolist()
         )
         if is_total:
-            return [f"font-weight:800;border-top:2px solid {UI_ACCENT};background-color:#EEF2F7;color:#1E293B"] * len(row)
+            return [f"font-weight:800;border-top:2px solid {table_accent};background-color:#EEF2F7;color:#1E293B"] * len(row)
         return [""] * len(row)
     styled = styled.apply(total_row_style, axis=1)
     for column in at_columns:
@@ -5252,7 +5253,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
         elif perf_view=="Toserba":
             # ── TOSERBA: Principal ID CHW & ETW ─────────────────────────────
             toserba_view=st.radio("Sub Menu Toserba",["Monitoring Toserba","Target Tantangan"],horizontal=True,key="toserba_submenu")
-            st.markdown(f"#### {'Target Tantangan' if toserba_view=='Target Tantangan' else 'Monitoring Toserba'} · {month_name} {int(selected_year)}")
+            st.markdown(f"#### {month_name} {int(selected_year)}")
             st.caption("Scope: Principal ID CHW dan ETW · filter Bisnis Group & Sales Person Title mengikuti pilihan di atas.")
             TOSERBA_PIDS = ["CHW","ETW"]
 
@@ -5361,28 +5362,30 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
             tsb_dev_y = tsb_act_y - tsb_tgt_y
 
             # ── KPI cards bulanan — 4 kolom ───────────────────────────────────
-            ach_color_tsb = RED if (tsb_ach_m or 0)<60 else ("#F5C542" if (tsb_ach_m or 0)<90 else "#39C77B")
-            _cs = "border-radius:10px;padding:9px 12px;min-height:78px;box-shadow:0 4px 0 #000737;border:1px solid #344a78"
             top_tsb = st.columns(4,gap="small")
-            for c_tsb,(lbl,val,clr) in zip(top_tsb,[
-                (f"Actual · {month_name}", tsb_act_m, BLUE),
-                (f"Target · {month_name}", tsb_tgt_m, MIDNIGHT_BLUE),
-                ("A/T",                    tsb_ach_m, ach_color_tsb),
-                ("Deviasi",                tsb_dev_m, MIDNIGHT_BLUE),
-            ]):
+            tsb_month_metrics=[
+                (f"Actual Gross · {month_name}",tsb_act_m),
+                (f"Target · {month_name}",tsb_tgt_m),
+                ("A/T",tsb_ach_m),
+                ("Deviasi",tsb_dev_m),
+            ]
+            for index,(c_tsb,(lbl,val)) in enumerate(zip(top_tsb,tsb_month_metrics)):
                 with c_tsb:
                     disp_val = f"{val:,.1f}%" if lbl=="A/T" and val is not None else ("—" if val is None else f"Rp {val:,.0f}")
-                    st.markdown(f"<div style='background:{clr};{_cs}'><div style='font-size:.72rem;color:#FCF1CF;opacity:.85'>{lbl}</div><div style='font-size:1.1rem;font-weight:800;color:#FCF1CF;margin-top:5px'>{disp_val}</div></div>",unsafe_allow_html=True)
+                    accent_class="monitoring-sales-card--orange" if index%2 else "monitoring-sales-card--teal"
+                    negative_class=" monitoring-sales-card__value--negative" if lbl=="Deviasi" and val is not None and val<0 else ""
+                    st.markdown(f"<div class='monitoring-sales-card {accent_class}'><div class='monitoring-sales-card__label'>{lbl}</div><div class='monitoring-sales-card__value{negative_class}'>{disp_val}</div></div>",unsafe_allow_html=True)
 
             # YTD cards — 4 kolom
             cum_tsb = st.columns(4,gap="small")
             for c_tsb,(lbl,val) in zip(cum_tsb,[
-                ("Actual YTD",tsb_act_y),("Target YTD",tsb_tgt_y),
-                ("A/T YTD",tsb_ach_y),("Deviasi YTD",tsb_dev_y),
+                ("Actual Gross · YTD",tsb_act_y),("Target · YTD",tsb_tgt_y),
+                ("A/T · YTD",tsb_ach_y),("Deviasi · YTD",tsb_dev_y),
             ]):
                 with c_tsb:
                     disp_val = f"{val:,.1f}%" if lbl.startswith("A/T") and val is not None else ("—" if val is None else f"Rp {val:,.0f}")
-                    st.markdown(f"<div style='background:{MIDNIGHT_BLUE};{_cs}'><div style='font-size:.7rem;color:#FCF1CF;opacity:.8'>{lbl}</div><div style='font-size:1rem;font-weight:800;color:#FCF1CF;margin-top:4px'>{disp_val}</div></div>",unsafe_allow_html=True)
+                    negative_class=" monitoring-sales-card__value--negative" if lbl.startswith("Deviasi") and val is not None and val<0 else ""
+                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal'><div class='monitoring-sales-card__label'>{lbl}</div><div class='monitoring-sales-card__value{negative_class}'>{disp_val}</div></div>",unsafe_allow_html=True)
 
             # ── AI Insight Toserba dengan susunan yang sama seperti Performance Sales ──
             st.markdown("#### 🧠 AI Insight · Strategi Capai Target Bulanan")
