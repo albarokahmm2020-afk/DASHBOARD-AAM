@@ -107,19 +107,7 @@ def _performance_report_table(data):
     """Apply the Performance Sales table palette to report tables."""
     table=data.copy()
     row_backgrounds=["#F4F7FB" if index%2==0 else "#E8EEF6" for index in range(len(table))]
-    styled=table.style.set_table_styles([
-        {"selector":"table","props":[("border-collapse","collapse"),("width","100%"),("border","1px solid #D4DEEA"),("background-color","#F4F7FB")]},
-        {"selector":"th","props":[("background","#335A9F"),("color","#FFFFFF"),("font-weight","800"),("font-size","13px"),("border","1px solid #24477F"),("padding","7px 8px"),("text-align","left"),("white-space","nowrap")]},
-        {"selector":"td:first-child","props":[("font-weight","600")]},
-    ])
-    styled=styled.set_properties(**{
-        "color":"#1B2E46",
-        "font-size":"13px",
-        "line-height":"1.2",
-        "border":"1px solid #D4DEEA",
-        "padding":"7px 8px",
-        "white-space":"nowrap",
-    })
+    styled=table.style.set_properties(**{"color":"#1B2E46"})
     styled=styled.apply(
         lambda column:[f"background-color:{row_backgrounds[index]}" for index in range(len(column))],
         axis=0,
@@ -4426,8 +4414,9 @@ elif main_section=="Report":
         div[data-testid='stDataFrame'],
         div[data-testid='stDataEditor'] {{
           color-scheme: light !important;
-          --gdg-text-dark: #1E293B !important;
+          --gdg-text-dark: #1B2E46 !important;
           --gdg-text-medium: #334155 !important;
+          --gdg-text-light: #475569 !important;
           --gdg-text-header: #FFFFFF !important;
           --gdg-bg-cell: #F4F7FB !important;
           --gdg-bg-cell-medium: #E8EEF6 !important;
