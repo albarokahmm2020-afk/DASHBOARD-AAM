@@ -110,9 +110,16 @@ def _performance_report_table(data):
     styled=table.style.set_table_styles([
         {"selector":"table","props":[("border-collapse","collapse"),("width","100%"),("border","1px solid #D4DEEA"),("background-color","#F4F7FB")]},
         {"selector":"th","props":[("background","#335A9F"),("color","#FFFFFF"),("font-weight","800"),("font-size","13px"),("border","1px solid #24477F"),("padding","7px 8px"),("text-align","left"),("white-space","nowrap")]},
-        {"selector":"td","props":[("font-size","13px"),("line-height","1.2"),("border","1px solid #D4DEEA"),("color","#1B2E46"),("padding","7px 8px"),("white-space","nowrap")]},
         {"selector":"td:first-child","props":[("font-weight","600")]},
     ])
+    styled=styled.set_properties(**{
+        "color":"#1B2E46",
+        "font-size":"13px",
+        "line-height":"1.2",
+        "border":"1px solid #D4DEEA",
+        "padding":"7px 8px",
+        "white-space":"nowrap",
+    })
     styled=styled.apply(
         lambda column:[f"background-color:{row_backgrounds[index]}" for index in range(len(column))],
         axis=0,
@@ -4639,12 +4646,12 @@ elif main_section=="Report":
         _barrier_editor_signature=hashlib.sha256(_barrier_input.drop(columns=["Faktor penghambat / analisa"]).to_csv(index=False).encode("utf-8")).hexdigest()[:10]
         st.markdown("##### Faktor Pendukung · POT on target")
         if not _support_input.empty:
-            _support_input=_streamlit_data_editor(_performance_report_table(_support_input),width="stretch",hide_index=True,height=_monthly_report_table_height(_support_input,40),key=f"monthly_support_editor_{_monthly_report_key}_{_support_editor_signature}",column_config={"POT":st.column_config.TextColumn(disabled=True),"A/T":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Kontribusi Gross (%)":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Faktor pendukung / analisa":st.column_config.TextColumn(help="Tuliskan produk/relasi/program/dukungan yang mendorong pencapaian."),"Analisa tren Principal":st.column_config.TextColumn(disabled=True,width="large"),"Analisa perubahan relasi":st.column_config.TextColumn(disabled=True,width="large")})
+            _support_input=_streamlit_data_editor(_support_input,width="stretch",hide_index=True,height=_monthly_report_table_height(_support_input,40),key=f"monthly_support_editor_{_monthly_report_key}_{_support_editor_signature}",column_config={"POT":st.column_config.TextColumn(disabled=True),"A/T":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Kontribusi Gross (%)":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Faktor pendukung / analisa":st.column_config.TextColumn(help="Tuliskan produk/relasi/program/dukungan yang mendorong pencapaian."),"Analisa tren Principal":st.column_config.TextColumn(disabled=True,width="large"),"Analisa perubahan relasi":st.column_config.TextColumn(disabled=True,width="large")})
         else:
             st.info("Belum ada POT dengan pencapaian minimal 100%.")
         st.markdown("##### Faktor Penghambat · POT belum on target")
         if not _barrier_input.empty:
-            _barrier_input=_streamlit_data_editor(_performance_report_table(_barrier_input),width="stretch",hide_index=True,height=_monthly_report_table_height(_barrier_input,40),key=f"monthly_barrier_editor_{_monthly_report_key}_{_barrier_editor_signature}",column_config={"POT":st.column_config.TextColumn(disabled=True),"ACT":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"TGT":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"A/T":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Dev":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"Faktor penghambat / analisa":st.column_config.TextColumn(help="Tuliskan kendala stok, pemenuhan PO, atau penyebab lain."),"Analisa tren Principal":st.column_config.TextColumn(disabled=True,width="large"),"Analisa perubahan relasi":st.column_config.TextColumn(disabled=True,width="large")})
+            _barrier_input=_streamlit_data_editor(_barrier_input,width="stretch",hide_index=True,height=_monthly_report_table_height(_barrier_input,40),key=f"monthly_barrier_editor_{_monthly_report_key}_{_barrier_editor_signature}",column_config={"POT":st.column_config.TextColumn(disabled=True),"ACT":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"TGT":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"A/T":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Dev":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"Faktor penghambat / analisa":st.column_config.TextColumn(help="Tuliskan kendala stok, pemenuhan PO, atau penyebab lain."),"Analisa tren Principal":st.column_config.TextColumn(disabled=True,width="large"),"Analisa perubahan relasi":st.column_config.TextColumn(disabled=True,width="large")})
         else:
             st.info("Semua POT sudah on target.")
 
