@@ -723,11 +723,25 @@ def _drive_folder_id(folder_name, parent_id):
     return response.json()["id"]
 
 def _drive_storage_folder(category, branch=None):
-    """Return/create a folder inside the user-selected shared dashboard folder."""
+    """Return/create a folder under a writable folder in a Shared Drive."""
+    from google.auth.transport.requests import AuthorizedSession
     drive_settings=st.secrets.get("google_drive",{})
-    root_id=str(drive_settings.get("storage_folder_id",drive_settings.get("database_folder_id",DEFAULT_DRIVE_DATABASE_FOLDER_ID))).strip()
+    root_id=str(drive_settings.get("storage_folder_id","")).strip()
     if not root_id:
-        raise RuntimeError("Folder penyimpanan Google Drive belum dikonfigurasi.")
+        raise RuntimeError("Sinkronisasi perlu Shared Drive. Atur [google_drive].storage_folder_id ke ID folder tujuan di Shared Drive.")
+    response=AuthorizedSession(_drive_service_credentials()).get(
+        f"https://www.googleapis.com/drive/v3/files/{root_id}",
+        params={"fields":"id,name,mimeType,driveId,capabilities(canAddChildren)","supportsAllDrives":"true"},
+        timeout=30,
+    )
+    if response.status_code==403:
+        raise RuntimeError("Akun layanan tidak dapat mengakses folder Shared Drive. Tambahkan akun layanan sebagai anggota Shared Drive dengan peran Kontributor.")
+    response.raise_for_status()
+    root=response.json()
+    if root.get("mimeType")!="application/vnd.google-apps.folder" or not root.get("driveId"):
+        raise RuntimeError("storage_folder_id bukan folder di Shared Drive. Gunakan ID folder tujuan dari Shared Drive, bukan folder My Drive atau database_folder_id.")
+    if root.get("capabilities",{}).get("canAddChildren") is False:
+        raise RuntimeError("Akun layanan dapat melihat Shared Drive tetapi tidak dapat menambah file. Berikan peran Kontributor atau Pengelola Konten.")
     folder_id=_drive_folder_id("Dashboard_Data" if category!="exports" else "Dashboard_Exports",root_id)
     if branch:
         folder_id=_drive_folder_id(str(branch),folder_id)
