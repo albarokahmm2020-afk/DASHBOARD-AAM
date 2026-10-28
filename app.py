@@ -160,7 +160,9 @@ def _monthly_factor_editor_table(data,note_column,key_prefix):
     edited_table=table.copy()
     note_position=table.columns.get_loc(note_column)
 
-    with st.container(height=min(440,max(180,55+len(table)*145))):
+    scroll_height=min(440,max(180,55+len(table)*145))
+    container_options={"height":scroll_height} if "height" in inspect.signature(st.container).parameters else {}
+    with st.container(**container_options):
         header_cells=st.columns(widths,gap="small")
         for cell,(label,_) in zip(header_cells,fields):
             with cell:
@@ -192,7 +194,7 @@ def _monthly_factor_editor_table(data,note_column,key_prefix):
                         target=pd.to_numeric(row[column[1]],errors="coerce")
                         actual_text="—" if pd.isna(actual) else f"{actual:,.0f}"
                         target_text="—" if pd.isna(target) else f"{target:,.0f}"
-                        display_value=f"ACT {actual_text}<br>Target {target_text}"
+                        display_html=f"ACT {html.escape(actual_text)}<br>Target {html.escape(target_text)}"
                         cell_background=background
                     else:
                         value=row[column]
@@ -208,6 +210,7 @@ def _monthly_factor_editor_table(data,note_column,key_prefix):
                             cell_background="#D7F2E2"
                         elif label.strip().casefold()=="dev" and pd.api.types.is_number(value) and value<0:
                             cell_background="#FCE1E4"
+                        display_html=html.escape(display_value)
                     if isinstance(column,tuple):
                         cell_color="#1B2E46"
                     elif label.strip().casefold().startswith("a/t") and pd.api.types.is_number(value) and value>=100:
@@ -217,7 +220,7 @@ def _monthly_factor_editor_table(data,note_column,key_prefix):
                     else:
                         cell_color="#1B2E46"
                     st.markdown(
-                        f"<div style='min-height:72px;display:flex;flex-direction:column;justify-content:center;background:{cell_background};color:{cell_color};padding:8px;border:1px solid #D4DEEA;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;'>{html.escape(display_value).replace('&lt;br&gt;','<br>')}</div>",
+                        f"<div style='min-height:72px;display:flex;flex-direction:column;justify-content:center;background:{cell_background};color:{cell_color};padding:8px;border:1px solid #D4DEEA;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;'>{display_html}</div>",
                         unsafe_allow_html=True,
                     )
 
