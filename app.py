@@ -1307,10 +1307,14 @@ div[data-testid='stRadio'] div[role='radiogroup'] {{
   gap: 6px;
   flex-wrap: wrap;
 }}
-div[data-testid='stRadio'] div[role='radiogroup'] [data-baseweb='radio'] > div:first-of-type,
-div[data-testid='stRadio'] div[role='radiogroup'] [data-baseweb='radio'] > input,
-div[data-testid='stRadio'] div[role='radiogroup'] [data-baseweb='radio'] svg {{
+div[data-testid='stRadio'] div[role='radiogroup'] label > div:first-child,
+div[data-testid='stRadio'] div[role='radiogroup'] label[data-baseweb='radio'] > div[aria-hidden='true'],
+div[data-testid='stRadio'] div[role='radiogroup'] label input[type='radio'] {{
   display: none !important;
+}}
+div[data-testid='stRadio'] div[role='radiogroup'] label[data-baseweb='radio'] {{
+  appearance: none !important;
+  -webkit-appearance: none !important;
 }}
 div[data-testid='stRadio'] div[role='radiogroup'] label {{
   display: flex;
