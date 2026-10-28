@@ -23,9 +23,10 @@ def _all_rows_table_kwargs(data, kwargs, row_height):
         row_count = len(source)
     except (TypeError, ValueError):
         return kwargs
-    # Expand the component to all rows; the page itself remains the scroll surface.
-    kwargs["height"] = max(60, 30 + row_count * (row_height + 2))
-    kwargs["row_height"] = row_height
+    # Keep the existing all-rows default while allowing dense tables to opt into
+    # a bounded viewport with their own internal scroll.
+    kwargs.setdefault("height", max(60, 30 + row_count * (row_height + 2)))
+    kwargs.setdefault("row_height", row_height)
     return kwargs
 
 def _performance_value(value):
@@ -7048,7 +7049,6 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                     st.caption(f"{pd.Timestamp(selected_date):%d %B %Y} · {day_value.title()} · Week {int(week_value)} · {len(daily_targets):,} relasi rute. H = history sebelum bulan berjalan; ACT = transaksi bulan berjalan.")
                     # Bangun column_config: kolom program diberi warna via help text,
                     # kolom Reason bisa diedit bebas
-                    prog_labels=[program_label(p) for p in programs]
                     _history_labels=[f"H · {program_label(prog).replace('RB ','').replace('SALES ','')}" for prog in programs]
                     _actual_labels=[f"ACT · {program_label(prog).replace('RB ','').replace('SALES ','')}" for prog in programs]
                     col_cfg={
@@ -7058,39 +7058,10 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                         **{_actual_labels[i]:st.column_config.TextColumn(_actual_labels[i],disabled=True,width="small",help=f"✓ = ada transaksi pada bulan berjalan untuk {program_label(prog)}.") for i,prog in enumerate(programs)},
                         "Reason":st.column_config.TextColumn("Reason",help="Isi catatan / reason hasil kunjungan one-on-one dengan salesman",width="medium"),
                     }
-                    daily_status_styler=daily_targets.style
-                    if _actual_labels:
-                        daily_status_styler=daily_status_styler.set_properties(
-                            subset=_actual_labels,
-                            **{
-                                "border-bottom": "2px solid #17324D",
-                                "border-right": "1px solid #17324D",
-                                "text-align": "center",
-                            },
-                        )
-                        daily_status_styler=daily_status_styler.set_properties(
-                            subset=[_actual_labels[0]],
-                            **{"border-left": "3px solid #17324D"},
-                        )
-                    if _history_labels:
-                        daily_status_styler=daily_status_styler.map(
-                            lambda value:"background-color: #D8F0E3; color: #14532D; font-weight: bold;" if str(value).strip()=="✓" else "",
-                            subset=_history_labels,
-                        )
-                    if _actual_labels:
-                        daily_status_styler=daily_status_styler.map(
-                            lambda value: (
-                                "background-color: #D8F0E3; color: #14532D; font-weight: bold;"
-                                if str(value).strip()=="✓"
-                                else "background-color: #FCE2E2; color: #9F1239; font-weight: bold;"
-                            ),
-                            subset=_actual_labels,
-                        )
                     edited_daily=st.data_editor(
-                        daily_status_styler,
+                        daily_targets,
                         width="stretch",
-                        # Tampilkan seluruh rute tanpa scroll internal di dalam tabel.
-                        height=max(120, 38 + len(daily_targets) * 35),
+                        height=min(520, max(220, 38 + len(daily_targets) * 32)),
                         hide_index=True,
                         column_config=col_cfg,
                         key=f"daily_editor_{selected_date}_{day_value}_{week_value}",
