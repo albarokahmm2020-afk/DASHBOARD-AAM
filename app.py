@@ -1303,30 +1303,29 @@ button[kind='secondary'] {{
   box-shadow: none !important;
 }}
 div[data-testid='stRadio'] div[role='radiogroup'] {{
-  align-items: stretch;
-  gap: 10px;
+  align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
 }}
-div[data-testid='stRadio'] div[role='radiogroup'] label:has(input[type='radio']) > div:first-child,
-div[data-testid='stRadio'] div[role='radiogroup'] label:has(input[type='radio']) > input[type='radio'],
-div[data-testid='stRadio'] div[role='radiogroup'] label:has(input[type='radio']) svg {{
+div[data-testid='stRadio'] div[role='radiogroup'] [data-baseweb='radio'] > div:first-of-type,
+div[data-testid='stRadio'] div[role='radiogroup'] [data-baseweb='radio'] > input,
+div[data-testid='stRadio'] div[role='radiogroup'] [data-baseweb='radio'] svg {{
   display: none !important;
 }}
 div[data-testid='stRadio'] div[role='radiogroup'] label {{
-  min-height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #E9ECEF;
-  border: 2px solid #CBD5E1;
-  border-radius: 11px;
-  padding: 12px 28px;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  padding: 7px 14px;
   transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease;
 }}
 div[data-testid='stRadio'] div[role='radiogroup'] label p {{
   color: #334155 !important;
-  font-size: 1.16rem !important;
-  font-weight: 750 !important;
+  font-size: 1rem !important;
+  font-weight: 600 !important;
   line-height: 1.25 !important;
   margin: 0 !important;
 }}
@@ -1343,12 +1342,7 @@ div[data-testid='stRadio'] div[role='radiogroup'] label:hover:not(:has(input:che
   border-color: {UI_ACCENT};
 }}
 @media (max-width: 700px) {{
-  div[data-testid='stRadio'] div[role='radiogroup'] {{ gap: 7px; }}
-  div[data-testid='stRadio'] div[role='radiogroup'] label {{
-    min-height: 44px;
-    padding: 9px 14px;
-  }}
-  div[data-testid='stRadio'] div[role='radiogroup'] label p {{ font-size: .96rem !important; }}
+  div[data-testid='stRadio'] div[role='radiogroup'] {{ gap: 6px; }}
 }}
 div[data-testid='stMetric'], .scorecard, .score-heading,
 details[data-testid='stExpander'],
