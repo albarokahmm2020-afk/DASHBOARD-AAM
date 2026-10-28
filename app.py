@@ -139,6 +139,100 @@ def _performance_report_table(data):
             styled=styled.map(_report_variance_style,subset=[column])
     return styled
 
+def _monthly_factor_editor_table(data,note_column,key_prefix):
+    """Render a Performance Sales-styled report table with editable note cells."""
+    table=data.copy()
+    if table.empty:
+        return table
+
+    analysis_columns=[column for column in table.columns if str(column).startswith("Analisa ")]
+    fields=[]
+    for column in table.columns:
+        if column in analysis_columns or column=="TGT" and "ACT" in table.columns:
+            continue
+        if column=="ACT" and "TGT" in table.columns:
+            fields.append(("ACT / TGT",("ACT","TGT")))
+        else:
+            fields.append((str(column),column))
+    column_widths={"POT":1.3,"ACT / TGT":1.2,"A/T":0.8,"Dev":0.85,"Kontribusi Gross (%)":1.1,note_column:1.8}
+    widths=[column_widths.get(label,1.0) for label,_ in fields]
+    header_style="min-height:44px;display:flex;align-items:center;background:#335A9F;color:#FFFFFF;font-weight:700;padding:8px;border:1px solid #24477F;box-sizing:border-box;overflow-wrap:anywhere;"
+    edited_table=table.copy()
+    note_position=table.columns.get_loc(note_column)
+
+    with st.container(height=min(440,max(180,55+len(table)*145))):
+        header_cells=st.columns(widths,gap="small")
+        for cell,(label,_) in zip(header_cells,fields):
+            with cell:
+                st.markdown(f"<div style='{header_style}'>{html.escape(label)}</div>",unsafe_allow_html=True)
+
+        for row_number,(_,row) in enumerate(table.iterrows()):
+            background="#F4F7FB" if row_number%2==0 else "#E8EEF6"
+            row_cells=st.columns(widths,gap="small")
+            for cell,(label,column) in zip(row_cells,fields):
+                with cell:
+                    if column==note_column:
+                        pot_hash=hashlib.sha256(str(row.get("POT","")).encode("utf-8")).hexdigest()[:12]
+                        widget_key=f"{key_prefix}_{pot_hash}"
+                        note_value=st.session_state.get(widget_key,row[column])
+                        note_value="" if pd.isna(note_value) else str(note_value)
+                        edited_note=st.text_area(
+                            str(column),
+                            value=note_value,
+                            height=72,
+                            key=widget_key,
+                            label_visibility="collapsed",
+                            placeholder="Isi catatan analisa",
+                        )
+                        edited_table.iat[row_number,note_position]=edited_note
+                        continue
+
+                    if isinstance(column,tuple):
+                        actual=pd.to_numeric(row[column[0]],errors="coerce")
+                        target=pd.to_numeric(row[column[1]],errors="coerce")
+                        actual_text="—" if pd.isna(actual) else f"{actual:,.0f}"
+                        target_text="—" if pd.isna(target) else f"{target:,.0f}"
+                        display_value=f"ACT {actual_text}<br>Target {target_text}"
+                        cell_background=background
+                    else:
+                        value=row[column]
+                        if pd.isna(value):
+                            display_value="—"
+                        elif pd.api.types.is_number(value) and not isinstance(value,bool):
+                            normalized_label=label.strip().casefold()
+                            display_value=f"{value:,.1f}%" if normalized_label.startswith("a/t") or normalized_label.startswith("kontribusi gross") else f"{value:,.0f}"
+                        else:
+                            display_value=str(value)
+                        cell_background=background
+                        if label.strip().casefold().startswith("a/t") and pd.api.types.is_number(value) and value>=100:
+                            cell_background="#D7F2E2"
+                        elif label.strip().casefold()=="dev" and pd.api.types.is_number(value) and value<0:
+                            cell_background="#FCE1E4"
+                    if isinstance(column,tuple):
+                        cell_color="#1B2E46"
+                    elif label.strip().casefold().startswith("a/t") and pd.api.types.is_number(value) and value>=100:
+                        cell_color="#146C3E"
+                    elif label.strip().casefold()=="dev" and pd.api.types.is_number(value) and value<0:
+                        cell_color="#9E1B32"
+                    else:
+                        cell_color="#1B2E46"
+                    st.markdown(
+                        f"<div style='min-height:72px;display:flex;flex-direction:column;justify-content:center;background:{cell_background};color:{cell_color};padding:8px;border:1px solid #D4DEEA;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;'>{html.escape(display_value).replace('&lt;br&gt;','<br>')}</div>",
+                        unsafe_allow_html=True,
+                    )
+
+            if analysis_columns:
+                analysis_cells=st.columns(len(analysis_columns),gap="small")
+                analysis_background="#F4F7FB" if row_number%2==0 else "#E8EEF6"
+                for cell,column in zip(analysis_cells,analysis_columns):
+                    with cell:
+                        analysis_text="" if pd.isna(row[column]) else str(row[column])
+                        st.markdown(
+                            f"<div style='min-height:52px;background:{analysis_background};color:#334155;padding:7px 9px;border:1px solid #D4DEEA;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;font-size:12px;'><strong style='color:#335A9F'>{html.escape(str(column))}:</strong> {html.escape(analysis_text) or '—'}</div>",
+                            unsafe_allow_html=True,
+                        )
+    return edited_table
+
 def _dashboard_dataframe(data, *args, **kwargs):
     kwargs = _all_rows_table_kwargs(data, kwargs, row_height=26)
     return _streamlit_dataframe(_color_performance_columns(data), *args, **kwargs)
@@ -4423,6 +4517,11 @@ elif main_section=="Report":
           --gdg-bg-header: #335A9F !important;
           --gdg-bg-header-hover: #24477F !important;
         }}
+        div[data-testid='stTextArea'] textarea {{
+          color: #1B2E46 !important;
+          background-color: #FFFFFF !important;
+          border: 1px solid #D4DEEA !important;
+        }}
         </style>
         """,unsafe_allow_html=True)
 
@@ -4631,16 +4730,14 @@ elif main_section=="Report":
         _barrier_input["Faktor penghambat / analisa"]= [""]*len(_barrier_input)
         _barrier_input["Analisa tren Principal"]=_barrier_input["POT"].map(_monthly_principal_analysis) if not _barrier_input.empty else pd.Series(dtype="string")
         _barrier_input["Analisa perubahan relasi"]=_barrier_input["POT"].map(_monthly_relation_analysis) if not _barrier_input.empty else pd.Series(dtype="string")
-        _support_editor_signature=hashlib.sha256(_support_input.drop(columns=["Faktor pendukung / analisa"]).to_csv(index=False).encode("utf-8")).hexdigest()[:10]
-        _barrier_editor_signature=hashlib.sha256(_barrier_input.drop(columns=["Faktor penghambat / analisa"]).to_csv(index=False).encode("utf-8")).hexdigest()[:10]
         st.markdown("##### Faktor Pendukung · POT on target")
         if not _support_input.empty:
-            _support_input=_streamlit_data_editor(_support_input,width="stretch",hide_index=True,height=_monthly_report_table_height(_support_input,40),key=f"monthly_support_editor_{_monthly_report_key}_{_support_editor_signature}",column_config={"POT":st.column_config.TextColumn(disabled=True),"A/T":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Kontribusi Gross (%)":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Faktor pendukung / analisa":st.column_config.TextColumn(help="Tuliskan produk/relasi/program/dukungan yang mendorong pencapaian."),"Analisa tren Principal":st.column_config.TextColumn(disabled=True,width="large"),"Analisa perubahan relasi":st.column_config.TextColumn(disabled=True,width="large")})
+            _support_input=_monthly_factor_editor_table(_support_input,"Faktor pendukung / analisa",f"monthly_support_note_{_monthly_report_key}")
         else:
             st.info("Belum ada POT dengan pencapaian minimal 100%.")
         st.markdown("##### Faktor Penghambat · POT belum on target")
         if not _barrier_input.empty:
-            _barrier_input=_streamlit_data_editor(_barrier_input,width="stretch",hide_index=True,height=_monthly_report_table_height(_barrier_input,40),key=f"monthly_barrier_editor_{_monthly_report_key}_{_barrier_editor_signature}",column_config={"POT":st.column_config.TextColumn(disabled=True),"ACT":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"TGT":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"A/T":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Dev":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"Faktor penghambat / analisa":st.column_config.TextColumn(help="Tuliskan kendala stok, pemenuhan PO, atau penyebab lain."),"Analisa tren Principal":st.column_config.TextColumn(disabled=True,width="large"),"Analisa perubahan relasi":st.column_config.TextColumn(disabled=True,width="large")})
+            _barrier_input=_monthly_factor_editor_table(_barrier_input,"Faktor penghambat / analisa",f"monthly_barrier_note_{_monthly_report_key}")
         else:
             st.info("Semua POT sudah on target.")
 
