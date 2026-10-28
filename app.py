@@ -103,6 +103,47 @@ def _color_performance_columns(table):
         styled = styled.map(deviation_style, subset=[column])
     return styled
 
+def _performance_report_table(data):
+    """Apply the Performance Sales table palette to report tables."""
+    table=data.copy()
+    row_backgrounds=["#F4F7FB" if index%2==0 else "#E8EEF6" for index in range(len(table))]
+    styled=table.style.set_table_styles([
+        {"selector":"table","props":[("border-collapse","collapse"),("width","100%"),("border","1px solid #D4DEEA"),("background-color","#F4F7FB")]},
+        {"selector":"th","props":[("background","#335A9F"),("color","#FFFFFF"),("font-weight","800"),("font-size","13px"),("border","1px solid #24477F"),("padding","7px 8px"),("text-align","left"),("white-space","nowrap")]},
+        {"selector":"td","props":[("font-size","13px"),("line-height","1.2"),("border","1px solid #D4DEEA"),("color","#1B2E46"),("padding","7px 8px"),("white-space","nowrap")]},
+        {"selector":"td:first-child","props":[("font-weight","600")]},
+    ])
+    styled=styled.apply(
+        lambda column:[f"background-color:{row_backgrounds[index]}" for index in range(len(column))],
+        axis=0,
+    )
+    def _report_total_style(row):
+        is_total=any(
+            isinstance(value,str) and value.strip().casefold().startswith(("total","grand total","subtotal"))
+            for value in row.tolist()
+        )
+        if is_total:
+            return ["font-weight:800;border-top:2px solid #335A9F;background-color:#E8EEF6;color:#1E293B"]*len(row)
+        return [""]*len(row)
+    styled=styled.apply(_report_total_style,axis=1)
+    for column in table.columns:
+        label=str(column).strip().casefold()
+        if label.startswith(("a/t","achievement","pencapaian")):
+            styled=styled.map(
+                lambda value:"background-color:#D7F2E2;color:#146C3E;font-weight:800"
+                if (_performance_value(value) is not None and _performance_value(value)>=100) else "",
+                subset=[column],
+            )
+        elif any(token in label for token in ("dev","deviation","gap","perubahan")):
+            def _report_variance_style(value):
+                number=_performance_value(value)
+                if number is None: return ""
+                if number<0: return "background-color:#FCE1E4;color:#9E1B32;font-weight:800"
+                if number>0: return "background-color:#D7F2E2;color:#146C3E;font-weight:700"
+                return ""
+            styled=styled.map(_report_variance_style,subset=[column])
+    return styled
+
 def _dashboard_dataframe(data, *args, **kwargs):
     kwargs = _all_rows_table_kwargs(data, kwargs, row_height=26)
     return _streamlit_dataframe(_color_performance_columns(data), *args, **kwargs)
@@ -4381,10 +4422,10 @@ elif main_section=="Report":
           --gdg-text-dark: #1E293B !important;
           --gdg-text-medium: #334155 !important;
           --gdg-text-header: #FFFFFF !important;
-          --gdg-bg-cell: #FFFFFF !important;
-          --gdg-bg-cell-medium: #F3F6FB !important;
-          --gdg-bg-header: {UI_ACCENT} !important;
-          --gdg-bg-header-hover: {UI_ACCENT} !important;
+          --gdg-bg-cell: #F4F7FB !important;
+          --gdg-bg-cell-medium: #E8EEF6 !important;
+          --gdg-bg-header: #335A9F !important;
+          --gdg-bg-header-hover: #24477F !important;
         }}
         </style>
         """,unsafe_allow_html=True)
@@ -4446,7 +4487,7 @@ elif main_section=="Report":
             _monthly_scoped,_monthly_actual,_monthly_program_target,_monthly_achievement,_monthly_dev,_=calculate_program_kpi(_monthly_program,_monthly_selected)
             _monthly_push_rows.append({"Nama Program":program_label(_monthly_program,month=_monthly_name),"Metric":_monthly_selected["metric"],"TGT":_monthly_program_target or 0,"ACT":_monthly_actual or 0,"A/T":_monthly_achievement,"Dev":_monthly_dev or 0})
         _monthly_push_table=pd.DataFrame([{key:value for key,value in row.items() if key!="Metric"} for row in _monthly_push_rows])
-        st.dataframe(_monthly_push_table,width="stretch",hide_index=True,height=_monthly_report_table_height(_monthly_push_table),column_config={"TGT":st.column_config.NumberColumn(format="%,.0f"),"ACT":st.column_config.NumberColumn(format="%,.0f"),"A/T":st.column_config.NumberColumn(format="%.1f%%"),"Dev":st.column_config.NumberColumn(format="%,.0f")})
+        _streamlit_dataframe(_performance_report_table(_monthly_push_table),width="stretch",hide_index=True,height=_monthly_report_table_height(_monthly_push_table),column_config={"TGT":st.column_config.NumberColumn(format="%,.0f"),"ACT":st.column_config.NumberColumn(format="%,.0f"),"A/T":st.column_config.NumberColumn(format="%.1f%%"),"Dev":st.column_config.NumberColumn(format="%,.0f")})
 
         st.markdown("##### POT · Principal On Target")
         if _monthly_principal_col:
@@ -4512,7 +4553,7 @@ elif main_section=="Report":
             _relation_fallers=_monthly_relation_changes[_monthly_relation_changes["Perubahan"].lt(0)].sort_values("Perubahan",ascending=True).groupby("POT",sort=False).head(5)
             _relation_display=pd.concat([_relation_risers,_relation_fallers]).sort_values(["POT","Perubahan"],ascending=[True,False]).copy()
             st.markdown("##### Perubahan Sales per Relasi · 5 kenaikan dan 5 penurunan terbesar per POT")
-            st.dataframe(_relation_display,width="stretch",hide_index=True,height=_monthly_report_table_height(_relation_display),column_config={"Bulan Sebelumnya":st.column_config.NumberColumn(format="%,.0f"),"Bulan Dipilih":st.column_config.NumberColumn(format="%,.0f"),"Perubahan":st.column_config.NumberColumn(format="%,.0f"),"Perubahan (%)":st.column_config.NumberColumn(format="%.1f%%")})
+            _streamlit_dataframe(_performance_report_table(_relation_display),width="stretch",hide_index=True,height=_monthly_report_table_height(_relation_display),column_config={"Bulan Sebelumnya":st.column_config.NumberColumn(format="%,.0f"),"Bulan Dipilih":st.column_config.NumberColumn(format="%,.0f"),"Perubahan":st.column_config.NumberColumn(format="%,.0f"),"Perubahan (%)":st.column_config.NumberColumn(format="%.1f%%")})
         elif _monthly_customer_col:
             st.info("Belum ada nilai transaksi relasi pada bulan ini atau bulan sebelumnya untuk dibandingkan.")
         else:
@@ -4582,7 +4623,7 @@ elif main_section=="Report":
             return "; ".join(_parts)+"."
 
         if not _monthly_pot_table.empty:
-            st.dataframe(_monthly_pot_table,width="stretch",hide_index=True,height=_monthly_report_table_height(_monthly_pot_table),column_config={"ACT":st.column_config.NumberColumn(format="%,.0f"),"TGT":st.column_config.NumberColumn(format="%,.0f"),"A/T":st.column_config.NumberColumn(format="%.1f%%"),"Dev":st.column_config.NumberColumn(format="%,.0f"),"Kontribusi Gross (%)":st.column_config.NumberColumn(format="%.1f%%")})
+            _streamlit_dataframe(_performance_report_table(_monthly_pot_table),width="stretch",hide_index=True,height=_monthly_report_table_height(_monthly_pot_table),column_config={"ACT":st.column_config.NumberColumn(format="%,.0f"),"TGT":st.column_config.NumberColumn(format="%,.0f"),"A/T":st.column_config.NumberColumn(format="%.1f%%"),"Dev":st.column_config.NumberColumn(format="%,.0f"),"Kontribusi Gross (%)":st.column_config.NumberColumn(format="%.1f%%")})
         else:
             st.info("Tidak ada Principal ID/POT dalam data bulan dan bisnis yang dipilih.")
 
@@ -4598,12 +4639,12 @@ elif main_section=="Report":
         _barrier_editor_signature=hashlib.sha256(_barrier_input.drop(columns=["Faktor penghambat / analisa"]).to_csv(index=False).encode("utf-8")).hexdigest()[:10]
         st.markdown("##### Faktor Pendukung · POT on target")
         if not _support_input.empty:
-            _support_input=st.data_editor(_support_input,width="stretch",hide_index=True,height=_monthly_report_table_height(_support_input,40),key=f"monthly_support_editor_{_monthly_report_key}_{_support_editor_signature}",column_config={"POT":st.column_config.TextColumn(disabled=True),"A/T":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Kontribusi Gross (%)":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Faktor pendukung / analisa":st.column_config.TextColumn(help="Tuliskan produk/relasi/program/dukungan yang mendorong pencapaian."),"Analisa tren Principal":st.column_config.TextColumn(disabled=True,width="large"),"Analisa perubahan relasi":st.column_config.TextColumn(disabled=True,width="large")})
+            _support_input=_streamlit_data_editor(_performance_report_table(_support_input),width="stretch",hide_index=True,height=_monthly_report_table_height(_support_input,40),key=f"monthly_support_editor_{_monthly_report_key}_{_support_editor_signature}",column_config={"POT":st.column_config.TextColumn(disabled=True),"A/T":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Kontribusi Gross (%)":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Faktor pendukung / analisa":st.column_config.TextColumn(help="Tuliskan produk/relasi/program/dukungan yang mendorong pencapaian."),"Analisa tren Principal":st.column_config.TextColumn(disabled=True,width="large"),"Analisa perubahan relasi":st.column_config.TextColumn(disabled=True,width="large")})
         else:
             st.info("Belum ada POT dengan pencapaian minimal 100%.")
         st.markdown("##### Faktor Penghambat · POT belum on target")
         if not _barrier_input.empty:
-            _barrier_input=st.data_editor(_barrier_input,width="stretch",hide_index=True,height=_monthly_report_table_height(_barrier_input,40),key=f"monthly_barrier_editor_{_monthly_report_key}_{_barrier_editor_signature}",column_config={"POT":st.column_config.TextColumn(disabled=True),"ACT":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"TGT":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"A/T":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Dev":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"Faktor penghambat / analisa":st.column_config.TextColumn(help="Tuliskan kendala stok, pemenuhan PO, atau penyebab lain."),"Analisa tren Principal":st.column_config.TextColumn(disabled=True,width="large"),"Analisa perubahan relasi":st.column_config.TextColumn(disabled=True,width="large")})
+            _barrier_input=_streamlit_data_editor(_performance_report_table(_barrier_input),width="stretch",hide_index=True,height=_monthly_report_table_height(_barrier_input,40),key=f"monthly_barrier_editor_{_monthly_report_key}_{_barrier_editor_signature}",column_config={"POT":st.column_config.TextColumn(disabled=True),"ACT":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"TGT":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"A/T":st.column_config.NumberColumn(disabled=True,format="%.1f%%"),"Dev":st.column_config.NumberColumn(disabled=True,format="%,.0f"),"Faktor penghambat / analisa":st.column_config.TextColumn(help="Tuliskan kendala stok, pemenuhan PO, atau penyebab lain."),"Analisa tren Principal":st.column_config.TextColumn(disabled=True,width="large"),"Analisa perubahan relasi":st.column_config.TextColumn(disabled=True,width="large")})
         else:
             st.info("Semua POT sudah on target.")
 
