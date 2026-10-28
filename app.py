@@ -696,6 +696,7 @@ if not ASSET_DIR.exists():
 BRANCH_OPTIONS={"BDG":"Bandung","PTK":"Pontianak","MDN":"Medan"}
 # Folder link provided by the user. An explicit file ID in secrets overrides it.
 DEFAULT_DRIVE_DATABASE_FOLDER_ID="1Ef0DsWdqJ-fy7ahuQ0NR3H1dO2QkHk4b"
+DEFAULT_DRIVE_STORAGE_FOLDER_ID="1E88RgFi_zTHzsJZzD0RVztdcS5Wecc6e"
 def _drive_service_credentials():
     """Build credentials with write access limited by the service account's Drive sharing."""
     from google.oauth2.service_account import Credentials
@@ -726,7 +727,7 @@ def _drive_storage_folder(category, branch=None):
     """Return/create a folder under a writable folder in a Shared Drive."""
     from google.auth.transport.requests import AuthorizedSession
     drive_settings=st.secrets.get("google_drive",{})
-    root_id=str(drive_settings.get("storage_folder_id","")).strip()
+    root_id=str(drive_settings.get("storage_folder_id",DEFAULT_DRIVE_STORAGE_FOLDER_ID)).strip()
     if not root_id:
         raise RuntimeError("Sinkronisasi perlu Shared Drive. Atur [google_drive].storage_folder_id ke ID folder tujuan di Shared Drive.")
     response=AuthorizedSession(_drive_service_credentials()).get(
