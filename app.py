@@ -1825,6 +1825,47 @@ hr {{ border-color:#D8E0EA !important; }}
 @media (prefers-reduced-motion:reduce) {{ *,*::before,*::after {{ animation-duration:.01ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-duration:.01ms !important; }} }}
 </style>
 """,unsafe_allow_html=True)
+st.markdown(f"""
+<style>
+:root {{ --branch-accent:{UI_ACCENT}; --ui-primary:#1E40AF; --ui-ink:#1E293B; --ui-muted:#475569; --ui-line:#D8E0EA; --ui-surface:#FFFFFF; --ui-page:#F8F9FA; }}
+.stMainBlockContainer {{ max-width:1580px !important; padding-top:1.2rem !important; padding-bottom:3rem !important; }}
+section[data-testid='stSidebar'] {{ box-shadow:2px 0 12px rgba(15,23,42,.035); }}
+.sidebar-eyebrow {{ font-size:.68rem !important; letter-spacing:.12em !important; font-weight:800 !important; color:#64748B !important; }}
+section[data-testid='stSidebar'] div[data-testid='stRadio'] div[role='radiogroup'] {{ gap:5px !important; }}
+section[data-testid='stSidebar'] div[data-testid='stRadio'] div[role='radiogroup'] label {{ border:1px solid transparent !important; border-radius:9px !important; padding:.25rem .55rem !important; transition:background-color .18s ease,border-color .18s ease !important; }}
+section[data-testid='stSidebar'] div[data-testid='stRadio'] div[role='radiogroup'] label:hover {{ background:#F1F5F9 !important; border-color:#E2E8F0 !important; }}
+section[data-testid='stSidebar'] div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) {{ background:#EFF6FF !important; border-color:#BFDBFE !important; }}
+section[data-testid='stSidebar'] div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) p {{ color:#1E40AF !important; font-weight:750 !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] {{ background:#EEF2F7; padding:4px; border-radius:10px; gap:4px !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] label {{ min-height:40px !important; padding:4px 12px !important; border:1px solid transparent !important; border-radius:7px !important; background:transparent !important; transition:background-color .18s ease,border-color .18s ease !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] label:has(input:checked) {{ background:#FFFFFF !important; border-color:#D8E0EA !important; box-shadow:0 1px 3px rgba(15,23,42,.08) !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] label:has(input:checked) p {{ color:#1E40AF !important; font-weight:750 !important; }}
+.dashboard-context {{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin:10px 0 16px; padding:18px 20px; background:linear-gradient(110deg,#FFFFFF 0%,#FFFFFF 68%,{UI_HEADER_TINT} 100%); border:1px solid #D8E0EA; border-left:4px solid {UI_ACCENT}; border-radius:12px; box-shadow:0 2px 8px rgba(15,23,42,.045); }}
+.dashboard-context__title {{ margin:0; color:#0F172A; font-size:clamp(1.25rem,2.2vw,1.8rem); font-weight:780; line-height:1.2; letter-spacing:-.025em; }}
+.dashboard-context__subtitle {{ color:#475569; margin-top:5px; font-size:.9rem; line-height:1.45; }}
+.dashboard-context__meta {{ display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; }}
+.dashboard-pill {{ display:inline-flex; align-items:center; gap:6px; border:1px solid #D8E0EA; border-radius:999px; padding:6px 10px; background:#FFFFFF; color:#334155; font-size:.76rem; font-weight:700; white-space:nowrap; }}
+.dashboard-pill--branch {{ background:#EFF6FF; border-color:#BFDBFE; color:#1E40AF; }}
+.dashboard-pill--source {{ background:#F8FAFC; }}
+.monitoring-sales-card,.monitoring-sales-fot {{ border:1px solid #D8E0EA !important; border-top:3px solid {UI_ACCENT} !important; border-radius:10px !important; box-shadow:0 2px 8px rgba(15,23,42,.045) !important; }}
+.monitoring-sales-card:hover,.monitoring-sales-fot:hover {{ transform:translateY(-1px) !important; box-shadow:0 5px 14px rgba(15,23,42,.09) !important; }}
+.monitoring-sales-card__label {{ color:#475569 !important; font-size:.72rem !important; letter-spacing:.035em !important; }}
+.monitoring-sales-card__value {{ color:#0F172A !important; font-size:clamp(1.05rem,1.7vw,1.4rem) !important; }}
+.monitoring-sales-fot strong {{ color:{UI_ACCENT} !important; }}
+.score-heading {{ background:#FFFFFF !important; border:1px solid #D8E0EA !important; border-left:4px solid {UI_ACCENT} !important; border-radius:9px !important; box-shadow:none !important; color:#1E293B !important; text-shadow:none !important; padding:11px 14px !important; white-space:normal !important; }}
+.scorecard {{ border:1px solid #D8E0EA !important; border-top:3px solid {UI_ACCENT} !important; border-radius:11px !important; box-shadow:0 2px 8px rgba(15,23,42,.05) !important; }}
+.scorecard:hover {{ transform:translateY(-1px) !important; box-shadow:0 6px 16px rgba(15,23,42,.09) !important; }}
+.stDataFrame,.stDataEditor {{ border-radius:9px !important; }}
+div[data-testid='stVegaLiteChart'] {{ border:1px solid #E2E8F0; border-radius:10px; padding:6px; background:#FFFFFF !important; }}
+@media(max-width:760px) {{
+  .dashboard-context {{ align-items:flex-start; flex-direction:column; padding:14px; }}
+  .dashboard-context__meta {{ justify-content:flex-start; }}
+  div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] {{ flex-wrap:wrap !important; }}
+  div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] label {{ flex:1 1 auto !important; }}
+}}
+@media(prefers-reduced-motion:reduce) {{ .monitoring-sales-card,.monitoring-sales-fot,.scorecard {{ transition:none !important; }} }}
+</style>
+""",unsafe_allow_html=True)
 if branch_header_img:
     _branch_header_html=f"<div class='brand brand--reference'>{branch_header_img}</div>"
 else:
@@ -2572,6 +2613,27 @@ if df is None:
     else:
         st.info("Unggah workbook Excel transaksi dari sidebar untuk melihat dashboard. Target dapat disiapkan terpisah melalui template sasaran.")
     st.stop()
+
+_section_descriptions={
+    "Performance Sales":"Pantau pencapaian penjualan, target, dan aktivitas sales cabang.",
+    "Program Push":"Pantau actual, target, progres mingguan, dan insight setiap program.",
+    "Menu Insentif":"Lihat kalkulasi insentif dan progres kualifikasi sales cabang.",
+    "Report":"Siapkan laporan operasional dan ringkasan performa cabang.",
+}
+_source_badge=("Google Drive" if str(_data_source_mode).startswith("Google Drive")
+               else "Workbook unggahan" if source is not None else "File lokal")
+_dashboard_title=html.escape(str(main_section))
+_dashboard_subtitle=html.escape(_section_descriptions.get(main_section,"Dashboard performa cabang."))
+if main_section=="Program Push" and page:
+    _dashboard_subtitle+=f" · Tampilan {html.escape(str(page))}"
+st.markdown(
+    f"<section class='dashboard-context' aria-label='Konteks dashboard'>"
+    f"<div><h1 class='dashboard-context__title'>{_dashboard_title}</h1>"
+    f"<div class='dashboard-context__subtitle'>{_dashboard_subtitle}</div></div>"
+    f"<div class='dashboard-context__meta'><span class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(ACTIVE_BRANCH_NAME)} · {html.escape(ACTIVE_BRANCH_CODE)}</span>"
+    f"<span class='dashboard-pill dashboard-pill--source'>Sumber data · {html.escape(_source_badge)}</span></div></section>",
+    unsafe_allow_html=True,
+)
 
 def target_preview_for_config(program,params,metric):
     """Find the monthly target that should seed a program's weekly setting."""
@@ -5403,13 +5465,14 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     accent_class="monitoring-sales-card--orange" if index%2 else "monitoring-sales-card--teal"
                     negative_class=" monitoring-sales-card__value--negative" if label=="Deviasi" and value is not None and value<0 else ""
                     st.markdown(f"<div class='monitoring-sales-card {accent_class}'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
-            cum=st.columns(4,gap="small")
-            cum_metrics=[("Actual Gross · YTD",y_actual),("Target · YTD",y_target),("A/T · YTD",y_ach),("Deviasi · YTD",y_dev)]
-            for c,(label,value) in zip(cum,cum_metrics):
-                with c:
-                    display=f"{value:,.1f}%" if label.startswith("A/T") and value is not None else ("—" if value is None else f"{value:,.0f}")
-                    negative_class=" monitoring-sales-card__value--negative" if label.startswith("Deviasi") and value is not None and value<0 else ""
-                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
+            with st.expander(f"Ringkasan kumulatif YTD · Jan–{month_name} {int(selected_year)}",expanded=False):
+                cum=st.columns(4,gap="small")
+                cum_metrics=[("Actual Gross · YTD",y_actual),("Target · YTD",y_target),("A/T · YTD",y_ach),("Deviasi · YTD",y_dev)]
+                for c,(label,value) in zip(cum,cum_metrics):
+                    with c:
+                        display=f"{value:,.1f}%" if label.startswith("A/T") and value is not None else ("—" if value is None else f"{value:,.0f}")
+                        negative_class=" monitoring-sales-card__value--negative" if label.startswith("Deviasi") and value is not None and value<0 else ""
+                        st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
             m_principal=month_df.groupby(principal_col,dropna=False).agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum")).reset_index()
             m_principal=m_principal.rename(columns={principal_col:"Principal ID"})
             y_principal=ytd_df.groupby(principal_col,dropna=False).agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum")).reset_index().rename(columns={principal_col:"Principal ID"})
@@ -5429,22 +5492,42 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
             trend["Month"]=trend["_perf_month"].map(lambda m:MONTHS.get(int(m),str(m)))
             trend["A/T %"]=trend["Sales"].div(trend["Target"].replace(0,float("nan")))*100
             fot=int(((trend["Target"]>0)&(trend["Sales"]>=trend["Target"])).sum())
-            chart_header, fot_box=st.columns([5,1])
-            with chart_header: st.markdown("#### Trend Sales Bulanan · Actual vs Target")
-            with fot_box:
-                st.markdown(f"<div class='monitoring-sales-fot'>FOT {int(selected_year)}<br><strong>{fot}x</strong></div>",unsafe_allow_html=True)
+            sales_visual_cols=st.columns([1.25,.85],gap="medium")
+            with sales_visual_cols[0]:
+                chart_header, fot_box=st.columns([5,1])
+                with chart_header: st.markdown("#### Tren Penjualan Cabang · Actual vs Target")
+                with fot_box:
+                    st.markdown(f"<div class='monitoring-sales-fot'>FOT {int(selected_year)}<br><strong>{fot}×</strong></div>",unsafe_allow_html=True)
             at_max=float(trend["A/T %"].dropna().max()) if trend["A/T %"].notna().any() else 150
             at_axis_max=max(150,math.ceil(at_max/25)*25)
-            bars=alt.Chart(trend).transform_fold(["Sales","Target"],as_=["Jenis","Nilai"]).mark_bar(size=25,opacity=.9,tooltip=False).encode(
+            bars=alt.Chart(trend).transform_fold(["Sales","Target"],as_=["Jenis","Nilai"]).mark_bar(size=25,opacity=.9).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist(),axis=alt.Axis(title="BULAN",labelAngle=-30,labelPadding=7)),
                 xOffset=alt.XOffset("Jenis:N"),y=alt.Y("Nilai:Q",title="Sales Value Gross / Target",scale=alt.Scale(domainMin=0),axis=alt.Axis(format="~s",titlePadding=10)),
+                tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("Jenis:N",title="Metrik"),alt.Tooltip("Nilai:Q",title="Nominal",format=",.0f")],
                 color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#0F766E","#64748B"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)))
-            line=alt.Chart(trend).mark_line(color="#B91C1C",strokeDash=[7,5],strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=58),tooltip=False).encode(
+            line=alt.Chart(trend).mark_line(color=UI_ACCENT,strokeDash=[7,5],strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=58)).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist()),y=alt.Y("A/T %:Q",title="A/T (%)",scale=alt.Scale(domain=[0,at_axis_max]),axis=alt.Axis(orient="right",format=".0f",labelExpr="datum.value + '%'",grid=False,titlePadding=10)),
+                tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("A/T %:Q",title="Pencapaian",format=".1f")],
             )
             combo=alt.layer(bars,line).resolve_scale(y="independent").properties(height=350,padding={"left":10,"right":8,"top":8,"bottom":2})
             combo=combo.configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=12,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E0E6ED",gridDash=[3,4],titlePadding=8).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
-            st.altair_chart(combo,width="stretch")
+            with sales_visual_cols[0]:
+                st.altair_chart(combo,width="stretch")
+            with sales_visual_cols[1]:
+                st.markdown("#### Monitoring Sales")
+                st.caption(f"Pencapaian per Sales Person · {month_name} {int(selected_year)}")
+                if sp_col:
+                    _sp_monitor=month_df.groupby(sp_col,dropna=False).agg(Actual=("_perf_sales","sum"),Target=("_perf_target","sum")).reset_index().rename(columns={sp_col:"Sales Person"})
+                    _sp_monitor["Sales Person"]=_sp_monitor["Sales Person"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Tidak tercantum)").astype(str)
+                    _sp_monitor["Pencapaian"]=_sp_monitor["Actual"].div(_sp_monitor["Target"].replace(0,float("nan")))*100
+                    _sp_monitor["Status"]=_sp_monitor["Pencapaian"].map(lambda value:"Tercapai" if pd.notna(value) and value>=100 else "Perlu perhatian")
+                    _sp_monitor=_sp_monitor.sort_values(["Pencapaian","Actual"],ascending=[False,False],na_position="last").reset_index(drop=True)
+                    _sp_monitor_view=_sp_monitor[["Sales Person","Actual","Target","Pencapaian","Status"]]
+                    _sp_monitor_styled=_sp_monitor_view.style.format({"Actual":"{:,.0f}","Target":"{:,.0f}","Pencapaian":lambda value:"—" if pd.isna(value) else f"{value:,.1f}%"})
+                    _sp_monitor_styled=_sp_monitor_styled.map(lambda value:"background-color:#DCFCE7;color:#166534;font-weight:750" if pd.notna(value) and value>=100 else "background-color:#FEF3C7;color:#92400E;font-weight:700" if pd.notna(value) else "color:#64748B",subset=["Pencapaian"])
+                    st.dataframe(_sp_monitor_styled,width="stretch",hide_index=True,height=min(440,max(170,38+len(_sp_monitor_view)*35)))
+                else:
+                    st.info("Kolom Sales Person Title belum tersedia pada database aktif.")
 
             # ═══════════════════════════════════════════════════════════════
             # AI INSIGHT — Strategi Capai Target Bulanan
@@ -5517,12 +5600,12 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 headline=f"Pencapaian hanya {_ach_fmt:,.1f}% dengan {days_left} hari tersisa. Gap **{gap:,.0f}** sangat besar — perlu intervensi langsung dari AAM dan redistribusi sumber daya segera."
 
             # Render insight card
-            insight_bg={"✅":"#0d3b1e","🟡":"#3b2e00","🟠":"#3b1a00","🔴":"#3b0000"}[status_icon]
-            insight_border={"✅":"#39C77B","🟡":"#F5C542","🟠":"#FF7A00","🔴":"#C8102E"}[status_icon]
+            insight_bg={"✅":"#F0FDF4","🟡":"#FFFBEB","🟠":"#FFF7ED","🔴":"#FEF2F2"}[status_icon]
+            insight_border={"✅":"#15803D","🟡":"#A16207","🟠":"#C2410C","🔴":"#B91C1C"}[status_icon]
             st.markdown(f"""
 <div style='background:{insight_bg};border-left:5px solid {insight_border};border-radius:10px;padding:18px 22px;margin-bottom:12px'>
 <div style='color:{insight_border};font-weight:900;font-size:.85rem;letter-spacing:.08em'>{status_icon} {status_label}</div>
-<div style='color:#F0F4FF;font-size:1.05rem;font-weight:600;margin-top:6px;line-height:1.5'>{headline}</div>
+<div style='color:#1E293B;font-size:1.05rem;font-weight:600;margin-top:6px;line-height:1.5'>{headline}</div>
 </div>""",unsafe_allow_html=True)
 
             # 5 blok strategi detail
