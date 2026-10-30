@@ -1047,9 +1047,7 @@ def _reset_branch_session():
             del st.session_state[_state_key]
 if "active_branch_code" not in st.session_state:
     st.session_state["active_branch_code"]="BDG"
-with st.sidebar:
-    st.markdown("<div class='sidebar-eyebrow'>WORKSPACE</div>",unsafe_allow_html=True)
-    _branch_choice=st.selectbox("Pilih Cabang",list(BRANCH_OPTIONS),format_func=lambda code:f"{BRANCH_OPTIONS[code]} ({code})",key="active_branch_code",on_change=_reset_branch_session)
+_branch_choice=st.session_state.get("active_branch_code","BDG")
 ACTIVE_BRANCH_CODE=_branch_choice
 ACTIVE_BRANCH_NAME=BRANCH_OPTIONS[ACTIVE_BRANCH_CODE]
 UI_ACCENT={"BDG":"#20B2AA","PTK":"#6366F1","MDN":"#28A745"}[ACTIVE_BRANCH_CODE]
@@ -1840,6 +1838,11 @@ div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal']
 div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] label {{ min-height:40px !important; padding:4px 12px !important; border:1px solid transparent !important; border-radius:7px !important; background:transparent !important; transition:background-color .18s ease,border-color .18s ease !important; }}
 div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] label:has(input:checked) {{ background:#FFFFFF !important; border-color:#D8E0EA !important; box-shadow:0 1px 3px rgba(15,23,42,.08) !important; }}
 div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] label:has(input:checked) p {{ color:#1E40AF !important; font-weight:750 !important; }}
+.stMainBlockContainer div[data-testid='stElementContainer']:has(.main-nav-anchor) + div[data-testid='stElementContainer'] div[data-testid='stRadio'] div[role='radiogroup'] {{ display:flex !important; justify-content:space-between !important; background:#FFFFFF !important; padding:5px !important; border:1px solid #D8E0EA !important; border-radius:11px !important; box-shadow:0 2px 8px rgba(15,23,42,.045) !important; }}
+.stMainBlockContainer div[data-testid='stElementContainer']:has(.main-nav-anchor) + div[data-testid='stElementContainer'] div[data-testid='stRadio'] div[role='radiogroup'] label {{ flex:1 1 0 !important; justify-content:center !important; min-height:46px !important; text-align:center !important; font-weight:700 !important; }}
+.stMainBlockContainer div[data-testid='stElementContainer']:has(.main-nav-anchor) + div[data-testid='stElementContainer'] div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) {{ background:#1E40AF !important; border-color:#1E40AF !important; box-shadow:0 1px 3px rgba(30,64,175,.2) !important; }}
+.stMainBlockContainer div[data-testid='stElementContainer']:has(.main-nav-anchor) + div[data-testid='stElementContainer'] div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) p {{ color:#FFFFFF !important; font-weight:800 !important; }}
+.main-nav-anchor {{ margin:0 0 2px 2px; color:#475569; font-size:.68rem; font-weight:800; letter-spacing:.12em; }}
 .dashboard-context {{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin:10px 0 16px; padding:18px 20px; background:linear-gradient(110deg,#FFFFFF 0%,#FFFFFF 68%,{UI_HEADER_TINT} 100%); border:1px solid #D8E0EA; border-left:4px solid {UI_ACCENT}; border-radius:12px; box-shadow:0 2px 8px rgba(15,23,42,.045); }}
 .dashboard-context__title {{ margin:0; color:#0F172A; font-size:clamp(1.25rem,2.2vw,1.8rem); font-weight:780; line-height:1.2; letter-spacing:-.025em; }}
 .dashboard-context__subtitle {{ color:#475569; margin-top:5px; font-size:.9rem; line-height:1.45; }}
@@ -1871,32 +1874,56 @@ if branch_header_img:
 else:
     _branch_header_html=f"<div class='brand'>{bandung_header_img}{logo_aam_img}<div class='brand-copy'><h1>CHP AAM</h1><div class='brand-caption'><span class='bandung-badge'>CABANG {ACTIVE_BRANCH_NAME.upper()} · {ACTIVE_BRANCH_CODE}</span><span>PUSH PERFORMANCE · Monitoring actual, target, achievement, dan insight per program</span></div><div class='brand-landmark-label'>{_theme['landmarks'].replace(' · ',' <i>·</i> ')}</div></div>{attack_img}</div>"
 st.markdown(_branch_header_html,unsafe_allow_html=True)
+_workspace_cols=st.columns([1.35,2.2,3.45],gap="medium",vertical_alignment="bottom")
+with _workspace_cols[0]:
+    st.markdown("<div class='sidebar-eyebrow'>WORKSPACE · CABANG AKTIF</div>",unsafe_allow_html=True)
+    _branch_choice=st.selectbox(
+        "Pilih Cabang",list(BRANCH_OPTIONS),
+        format_func=lambda code:f"{BRANCH_OPTIONS[code]} ({code})",
+        key="active_branch_code",on_change=_reset_branch_session,
+        label_visibility="collapsed",
+    )
+with _workspace_cols[1]:
+    st.markdown(f"<span class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(BRANCH_OPTIONS[_branch_choice])} · {html.escape(_branch_choice)}</span>",unsafe_allow_html=True)
+with _workspace_cols[2]:
+    st.caption("Data, target, dan laporan mengikuti cabang yang sedang dipilih.")
 if "dashboard_page" not in st.session_state:
     st.session_state["dashboard_page"]=settings.get("dashboard_page","Summary Program")
 if st.session_state["dashboard_page"]=="Sasaran per Sales Person Title":
     st.session_state["dashboard_page"]="Sasaran Program"
 if "dashboard_section" not in st.session_state:
     st.session_state["dashboard_section"]=settings.get("dashboard_section","Program Push")
-if "nav_minimized" not in st.session_state:
-    st.session_state["nav_minimized"]=False
-if st.session_state["nav_minimized"]:
-    with st.sidebar:
-        if st.button("☰ Tampilkan navigasi",key="show_dashboard_navigation",use_container_width=True):
-            st.session_state["nav_minimized"]=False
-            st.rerun()
-    main_section=st.session_state.get("dashboard_section",settings.get("dashboard_section","Program Push"))
-    page=st.session_state.get("dashboard_page",settings.get("dashboard_page","Summary Program")) if main_section=="Program Push" else None
+_section_descriptions={
+    "Performance Sales":"Pantau pencapaian penjualan, target, dan aktivitas sales cabang.",
+    "Program Push":"Pantau actual, target, progres mingguan, dan insight setiap program.",
+    "Menu Insentif":"Lihat kalkulasi insentif dan progres kualifikasi sales cabang.",
+    "Report":"Siapkan laporan operasional dan ringkasan performa cabang.",
+}
+_main_labels=["Performance Sales","Program Push","Menu Insentif","Report"]
+_main_section_preview=st.session_state.get("dashboard_section",settings.get("dashboard_section","Program Push"))
+_main_page_preview=st.session_state.get("dashboard_page",settings.get("dashboard_page","Summary Program"))
+_preview_subtitle=html.escape(_section_descriptions.get(_main_section_preview,"Dashboard performa cabang."))
+if _main_section_preview=="Program Push" and _main_page_preview:
+    _preview_subtitle+=f" · Tampilan {html.escape(str(_main_page_preview))}"
+st.markdown(
+    f"<section class='dashboard-context' aria-label='Konteks dashboard'><div>"
+    f"<h1 class='dashboard-context__title'>{html.escape(str(_main_section_preview))}</h1>"
+    f"<div class='dashboard-context__subtitle'>{_preview_subtitle}</div></div></section>",
+    unsafe_allow_html=True,
+)
+st.markdown("<div class='main-nav-anchor'>NAVIGASI UTAMA</div>",unsafe_allow_html=True)
+main_section=st.radio(
+    "Navigasi utama",_main_labels,horizontal=True,key="dashboard_section",
+    label_visibility="collapsed",
+)
+if main_section=="Program Push":
+    page=st.radio(
+        "Pilih tampilan Program Push",
+        ["Summary Program","Program by Sales Person Title","Sasaran Program","Sasaran Kunjungan Harian per Sales Person Title"],
+        horizontal=True,key="dashboard_page",
+    )
 else:
-    with st.sidebar:
-        st.markdown("<div class='sidebar-eyebrow'>NAVIGASI UTAMA</div>",unsafe_allow_html=True)
-        main_section=st.radio("Dashboard CHP AAM",["Performance Sales","Program Push","Menu Insentif","Report"],horizontal=False,key="dashboard_section",label_visibility="collapsed")
-        if st.button("− Sembunyikan navigasi",key="minimize_dashboard_navigation",help="Sembunyikan navigasi utama.",use_container_width=True):
-            st.session_state["nav_minimized"]=True
-            st.rerun()
-    if main_section=="Program Push":
-        page=st.radio("Pilih tampilan Program Push",["Summary Program","Program by Sales Person Title","Sasaran Program","Sasaran Kunjungan Harian per Sales Person Title"],horizontal=True,key="dashboard_page")
-    else:
-        page=None
+    page=None
 settings["dashboard_section"]=main_section
 
 # ── TAB BULAN untuk Program Push ─────────────────────────────────────────────
@@ -1920,18 +1947,16 @@ if main_section=="Program Push":
     _active_push_month_num = _saved_tab + 1
     _pbm_key = _active_push_month   # key untuk per-bulan settings
 
-    # Minimize hides all Program Push controls while preserving the active month.
-    if not st.session_state.get("nav_minimized", False):
-        _tab_cols = st.columns(12, gap="small")
-        for _ti, (_tcol, _tabbr) in enumerate(zip(_tab_cols, _tab_abbr)):
-            with _tcol:
-                _is_active = (_ti == _saved_tab)
-                if st.button(_tabbr, key=f"tab_month_{_ti}", width="stretch",
-                             type="primary" if _is_active else "secondary"):
-                    st.session_state["push_month_tab_idx"] = _ti
-                    settings["push_month_tab_idx"] = _ti
-                    save_settings(settings)
-                    st.rerun()
+    _tab_cols = st.columns(12, gap="small")
+    for _ti, (_tcol, _tabbr) in enumerate(zip(_tab_cols, _tab_abbr)):
+        with _tcol:
+            _is_active = (_ti == _saved_tab)
+            if st.button(_tabbr, key=f"tab_month_{_ti}", width="stretch",
+                         type="primary" if _is_active else "secondary"):
+                st.session_state["push_month_tab_idx"] = _ti
+                settings["push_month_tab_idx"] = _ti
+                save_settings(settings)
+                st.rerun()
 
     # ── Load konfigurasi per bulan ────────────────────────────────────────
     _pbm_cfg = settings.setdefault("program_config_by_month", {})
@@ -1982,8 +2007,7 @@ if main_section=="Program Push":
         st.session_state[f"filter_year_{_pkey}"] = [] if _year_val=="All" else [str(_year_val)]
         st.session_state[f"filter_metric_{_pkey}"] = _cfg_save[_prog].get("metric","Total Relasi Beli Transaksi")
 
-    if not st.session_state.get("nav_minimized", False):
-        st.caption(f"📅 Konfigurasi yang sedang dibuka: **{_active_push_month}**. Bulan transaksi dihitung sesuai pilihan tiap program.")
+    st.caption(f"📅 Konfigurasi yang sedang dibuka: **{_active_push_month}**. Bulan transaksi dihitung sesuai pilihan tiap program.")
 
 with st.sidebar:
     with st.expander("Data dashboard", expanded=False):
@@ -2614,27 +2638,6 @@ if df is None:
         st.info("Unggah workbook Excel transaksi dari sidebar untuk melihat dashboard. Target dapat disiapkan terpisah melalui template sasaran.")
     st.stop()
 
-_section_descriptions={
-    "Performance Sales":"Pantau pencapaian penjualan, target, dan aktivitas sales cabang.",
-    "Program Push":"Pantau actual, target, progres mingguan, dan insight setiap program.",
-    "Menu Insentif":"Lihat kalkulasi insentif dan progres kualifikasi sales cabang.",
-    "Report":"Siapkan laporan operasional dan ringkasan performa cabang.",
-}
-_source_badge=("Google Drive" if str(_data_source_mode).startswith("Google Drive")
-               else "Workbook unggahan" if source is not None else "File lokal")
-_dashboard_title=html.escape(str(main_section))
-_dashboard_subtitle=html.escape(_section_descriptions.get(main_section,"Dashboard performa cabang."))
-if main_section=="Program Push" and page:
-    _dashboard_subtitle+=f" · Tampilan {html.escape(str(page))}"
-st.markdown(
-    f"<section class='dashboard-context' aria-label='Konteks dashboard'>"
-    f"<div><h1 class='dashboard-context__title'>{_dashboard_title}</h1>"
-    f"<div class='dashboard-context__subtitle'>{_dashboard_subtitle}</div></div>"
-    f"<div class='dashboard-context__meta'><span class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(ACTIVE_BRANCH_NAME)} · {html.escape(ACTIVE_BRANCH_CODE)}</span>"
-    f"<span class='dashboard-pill dashboard-pill--source'>Sumber data · {html.escape(_source_badge)}</span></div></section>",
-    unsafe_allow_html=True,
-)
-
 def target_preview_for_config(program,params,metric):
     """Find the monthly target that should seed a program's weekly setting."""
     specific_path=PROGRAM_TARGET_DIR/f"{key(program).replace(' ','_')}.csv"
@@ -2667,7 +2670,7 @@ _metric_labels = {
     "Total Relasi Beli Transaksi": "RB (Relasi yang transaksi > 0)",
     "Total Sales": "SALES (total seluruh transaksi)",
 }
-if main_section=="Program Push" and "_active_push_month" in dir() and not st.session_state.get("nav_minimized", False):
+if main_section=="Program Push" and "_active_push_month" in dir():
     _tab_months_cfg = list(MONTHS.values())
     _pbm_cfg2 = settings.setdefault("program_config_by_month", {})
     _this_month_cfg2 = _pbm_cfg2.setdefault(_active_push_month, {})
