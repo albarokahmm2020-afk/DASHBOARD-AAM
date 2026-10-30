@@ -1324,7 +1324,7 @@ st.markdown(f"""
 }}
 </style>
 """, unsafe_allow_html=True)
-st.markdown("<style>header[data-testid='stHeader']{height:1.3rem!important;min-height:1.3rem!important;background:transparent!important}header[data-testid='stHeader'] [data-testid='stToolbar']{height:1.3rem!important;min-height:1.3rem!important;transform:scale(.72);transform-origin:top right;padding:0!important}[data-testid='stDecoration']{display:none!important}.stMainBlockContainer{padding-top:.65rem!important}div[data-testid='stDataFrame'],div[data-testid='stDataEditor']{--gdg-text-dark:#1B2E46;--gdg-text-medium:#1B2E46;--gdg-text-header:#FFFFFF;--gdg-bg-cell:#F4F7FB;--gdg-bg-cell-medium:#E8EEF6;--gdg-bg-header:#335A9F;--gdg-bg-header-hover:#24477F;border-radius:14px;overflow:hidden;box-shadow:0 10px 24px rgba(0,7,55,.35)}.table-scroll-wrap table{margin:0}.table-scroll-wrap th{position:sticky;top:0;z-index:3;padding:3px 3px!important;font-size:.82rem!important;line-height:1.1!important}.table-scroll-wrap td{padding:2px 3px!important;font-size:.82rem!important;line-height:1.1!important}div[data-testid='stTable'] table{border-radius:14px;overflow:hidden;border-collapse:separate;border-spacing:0;box-shadow:0 10px 24px rgba(0,7,55,.35)}div[data-testid='stTable'] th,div[data-testid='stTable'] th p{background:linear-gradient(180deg,#335A9F 0%,#24477F 100%)!important;color:#FFFFFF!important;font-weight:800!important;letter-spacing:.03em;text-shadow:0 1px 2px rgba(0,0,0,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -2px 0 rgba(0,0,0,.24);border-bottom:2px solid #1D3B70;padding:3px 3px!important;font-size:.82rem!important;line-height:1.1!important}div[data-testid='stTable'] td,div[data-testid='stTable'] td p{color:#1B2E46!important;background:#F4F7FB!important;padding:2px 3px!important;font-size:.82rem!important;line-height:1.1!important}div[data-testid='stTable'] tbody tr:nth-child(even) td{background:#E8EEF6!important}</style>",unsafe_allow_html=True)
+st.markdown("<style>header[data-testid='stHeader']{height:1.3rem!important;min-height:1.3rem!important;background:transparent!important}header[data-testid='stHeader'] [data-testid='stToolbar']{height:1.3rem!important;min-height:1.3rem!important;transform:scale(.72);transform-origin:top right;padding:0!important}[data-testid='stDecoration']{display:none!important}.stMainBlockContainer{padding-top:.65rem!important}div[data-testid='stDataFrame'],div[data-testid='stDataEditor']{--gdg-text-dark:#1B2E46;--gdg-text-medium:#1B2E46;--gdg-text-header:#FFFFFF;--gdg-bg-cell:#F4F7FB;--gdg-bg-cell-medium:#E8EEF6;--gdg-bg-header:#335A9F;--gdg-bg-header-hover:#24477F;border-radius:14px;overflow:hidden;box-shadow:0 10px 24px rgba(0,7,55,.35)}.table-scroll-wrap table{margin:0}.table-scroll-wrap th{position:sticky;top:0;z-index:3;padding:3px 3px!important;font-size:.82rem!important;line-height:1.1!important}.table-scroll-wrap td{padding:2px 3px!important;font-size:.82rem!important;line-height:1.1!important}div[data-testid='stTable'] table{border-radius:14px;overflow:hidden;border-collapse:separate;border-spacing:0;box-shadow:0 10px 24px rgba(0,7,55,.35)}div[data-testid='stTable'] th,div[data-testid='stTable'] th p{background:linear-gradient(180deg,#335A9F 0%,#24477F 100%)!important;color:#FFFFFF!important;font-weight:800!important;letter-spacing:.03em;text-shadow:0 1px 2px rgba(0,0,0,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -2px 0 rgba(0,0,0,.24);border-bottom:2px solid #1D3B70;padding:3px 3px!important;font-size:.82rem!important;line-height:1.1!important}div[data-testid='stTable'] td,div[data-testid='stTable'] td p{color:#1E293B;padding:2px 3px;font-size:.82rem;line-height:1.2}div[data-testid='stTable'] tbody tr:nth-child(even) td{background:transparent}</style>",unsafe_allow_html=True)
 st.markdown(f"""
 <style>
 /* Safari exports the rendered document; let it see the full scroll height.
@@ -1723,28 +1723,25 @@ div[data-testid='stMetric'] [data-testid='stMetricValue'] {{
 div[data-testid='stDataFrame'], div[data-testid='stDataEditor'] {{
   --gdg-text-dark: #1E293B;
   --gdg-text-medium: #1E293B;
-  --gdg-text-header: #FFFFFF;
+  --gdg-text-header: #1E293B;
   --gdg-bg-cell: #FFFFFF;
   --gdg-bg-cell-medium: #F3F6FB;
-  --gdg-bg-header: {UI_ACCENT};
-  --gdg-bg-header-hover: {UI_ACCENT};
-  overflow: hidden;
+  --gdg-bg-header: #E9EEF6;
+  --gdg-bg-header-hover: #DCE5F1;
+  overflow: auto;
 }}
 div[data-testid='stTable'] th,
 div[data-testid='stTable'] th p,
 .table-scroll-wrap th {{
-  background: {UI_ACCENT} !important;
-  color: #FFFFFF !important;
+  background: #E9EEF6 !important;
+  color: #1E293B !important;
   border-color: rgba(15,23,42,.12) !important;
 }}
 div[data-testid='stTable'] td,
 div[data-testid='stTable'] td p,
 .table-scroll-wrap td {{
-  color: #1E293B !important;
-  background: #FFFFFF !important;
+  color: #1E293B;
 }}
-div[data-testid='stTable'] tbody tr:nth-child(even) td,
-.table-scroll-wrap tbody tr:nth-child(even) td {{ background: #F3F6FB !important; }}
 details[data-testid='stExpander'] summary {{ color: #1E293B !important; }}
 [data-testid='stAlert'], [data-testid='stChatMessage'] {{
   border-radius: 10px;
@@ -1756,128 +1753,56 @@ details[data-testid='stExpander'] summary {{ color: #1E293B !important; }}
 """, unsafe_allow_html=True)
 st.markdown(f"""
 <style>
-:root {{
-  color-scheme: dark;
-  --canvas: #0F172A;
-  --surface: #151F33;
-  --surface-raised: #1B2336;
-  --surface-muted: #202B40;
-  --foreground: #F8FAFC;
-  --muted-foreground: #A5B1C4;
-  --border: #344158;
-  --accent: #22C55E;
-  --accent-soft: rgba(34,197,94,.14);
-  --branch-accent: {UI_ACCENT};
-  --danger: #F87171;
-  --warning: #FBBF24;
-  --radius-card: 16px;
-  --shadow-card: 0 14px 34px rgba(2,8,23,.28);
-}}
-html, body, .stApp {{
-  background: var(--canvas) !important;
-  color: var(--foreground) !important;
-  font-family: 'Fira Sans', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-  font-size: 15px;
-  line-height: 1.5;
-}}
-.stApp {{ background-image: radial-gradient(ellipse at 85% 0%, rgba(34,197,94,.065), transparent 34%), linear-gradient(180deg,#0F172A 0%,#0B1220 100%) !important; }}
-.stMainBlockContainer {{ max-width: 1680px; padding-top: 1.15rem !important; padding-bottom: 3rem !important; background: transparent !important; }}
-h1,h2,h3,h4,h5,h6,p,label,[data-testid='stMarkdownContainer'],[data-testid='stCaptionContainer'] {{ color: var(--foreground); }}
-h1,h2,h3 {{ letter-spacing: -.025em; }}
-[data-testid='stCaptionContainer'],[data-testid='stCaptionContainer'] p {{ color: var(--muted-foreground) !important; }}
-section[data-testid='stSidebar'] {{ background: linear-gradient(180deg,#111B2D 0%,#0E1727 100%) !important; border-right: 1px solid rgba(148,163,184,.16); }}
-section[data-testid='stSidebar'] > div {{ padding: 1.15rem .9rem 1.5rem; }}
-section[data-testid='stSidebar'] h1,section[data-testid='stSidebar'] h2,section[data-testid='stSidebar'] h3,
-section[data-testid='stSidebar'] p,section[data-testid='stSidebar'] label,
-section[data-testid='stSidebar'] [data-testid='stCaptionContainer'] {{ color: var(--foreground) !important; }}
-.sidebar-eyebrow {{ color:#8FA0B9; font-size:.68rem; font-weight:800; letter-spacing:.16em; margin:0 0 .45rem .15rem; }}
-.brand {{ min-height:116px !important; border:1px solid rgba(148,163,184,.23) !important; border-left:4px solid var(--accent) !important; border-bottom:1px solid rgba(148,163,184,.18) !important; border-radius:18px !important; background:linear-gradient(105deg,rgba(21,31,51,.97),rgba(16,30,48,.94) 60%,rgba(22,44,61,.94)) !important; box-shadow:var(--shadow-card) !important; }}
-.brand-backdrop {{ opacity:.25 !important; mix-blend-mode:screen; }}
-.brand h1 {{ color:#F8FAFC !important; }}
-.brand-caption,.brand small {{ color:#CBD5E1 !important; }}
-.brand-caption .bandung-badge {{ background:var(--accent-soft) !important; border:1px solid rgba(34,197,94,.42) !important; color:#86EFAC !important; }}
-.brand-landmark-label {{ color:#97A7BD !important; }}
-.brand--reference {{ border:1px solid rgba(148,163,184,.2) !important; border-radius:18px !important; overflow:hidden !important; }}
-div[data-baseweb='select'] > div,input,textarea,
-[data-testid='stMultiSelect'] [role='group'],[data-testid='stSelectbox'] [role='group'] {{
-  background:#121C2E !important; color:var(--foreground) !important; border-color:var(--border) !important; border-radius:10px !important;
-}}
-input::placeholder,textarea::placeholder {{ color:#8291A8 !important; }}
-div[data-baseweb='select'] > div:hover,input:hover,textarea:hover {{ border-color:#64748B !important; }}
-div[data-baseweb='popover'],[role='listbox'],[data-testid='stPopoverBody'] {{ background:#172237 !important; color:var(--foreground) !important; border:1px solid var(--border) !important; }}
-[data-baseweb='popover'] *,[role='listbox'] * {{ color:var(--foreground) !important; }}
-span[data-baseweb='tag'] {{ background:var(--accent-soft) !important; border:1px solid rgba(34,197,94,.36) !important; border-radius:7px !important; }}
-span[data-baseweb='tag'] span {{ color:#BBF7D0 !important; }}
-button[kind='primary'] {{ background:linear-gradient(135deg,#22C55E,#16A34A) !important; color:#052E16 !important; border:1px solid #4ADE80 !important; border-radius:10px !important; font-weight:750 !important; box-shadow:0 5px 16px rgba(34,197,94,.16) !important; }}
-button[kind='primary']:hover {{ filter:brightness(1.08); transform:translateY(-1px); }}
-button[kind='secondary'] {{ background:#202B40 !important; color:#E2E8F0 !important; border:1px solid #3A4962 !important; border-radius:10px !important; box-shadow:none !important; }}
-button[kind='secondary']:hover {{ background:#28364E !important; border-color:#64748B !important; }}
-button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,
-[role='combobox']:focus-visible,[role='button']:focus-visible,[role='radio']:focus-visible,
-div[data-testid='stRadio'] label:has(input:focus-visible) {{ outline:3px solid #4ADE80 !important; outline-offset:3px !important; }}
-div[data-testid='stRadio'] div[role='radiogroup'] {{ align-items:center; gap:7px; flex-wrap:wrap; }}
-div[data-testid='stRadio'] div[role='radiogroup'] label > div:first-child,
-div[data-testid='stRadio'] div[role='radiogroup'] label[data-baseweb='radio'] > div[aria-hidden='true'],
-div[data-testid='stRadio'] div[role='radiogroup'] label input[type='radio'] {{ display:none !important; }}
-div[data-testid='stRadio'] div[role='radiogroup'] label[data-baseweb='radio'] {{ appearance:none !important; -webkit-appearance:none !important; }}
-div[data-testid='stRadio'] div[role='radiogroup'] label {{ min-height:44px; display:flex; align-items:center; justify-content:center; padding:8px 15px; background:#172237; border:1px solid #344158; border-radius:10px; transition:background .2s,border-color .2s,transform .2s; }}
-div[data-testid='stRadio'] div[role='radiogroup'] label p {{ color:#C5D0DF !important; font-size:.94rem !important; font-weight:650 !important; line-height:1.25 !important; margin:0 !important; }}
-div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) {{ background:var(--accent-soft) !important; border-color:rgba(34,197,94,.55) !important; box-shadow:inset 0 0 0 1px rgba(34,197,94,.12); }}
-div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) p {{ color:#A7F3D0 !important; }}
-div[data-testid='stRadio'] div[role='radiogroup'] label:hover:not(:has(input:checked)) {{ background:#202D43; border-color:#52627B; }}
+:root {{ color-scheme:light; --page-bg:#F8F9FA; --surface:#FFFFFF; --text:#1E293B; --muted:#475569; --line:#D8E0EA; --primary:#1E40AF; }}
+html,body,.stApp {{ color-scheme:light; background:#F8F9FA !important; color:#1E293B !important; font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important; }}
+.stApp {{ background-image:none !important; }}
+.stMainBlockContainer {{ max-width:1680px; background:transparent !important; }}
+section[data-testid='stSidebar'] {{ background:#FFFFFF !important; border-right:1px solid #D8E0EA; }}
+section[data-testid='stSidebar'] p,section[data-testid='stSidebar'] label,section[data-testid='stSidebar'] [data-testid='stCaptionContainer'] {{ color:#334155 !important; }}
+.sidebar-eyebrow {{ color:#475569 !important; }}
+.brand h1 {{ color:#0F172A !important; text-shadow:none !important; }}
+.brand-caption {{ color:#334155 !important; }}
+.brand-caption .bandung-badge {{ background:#EFF6FF !important; border:1px solid #BFDBFE !important; color:#1E40AF !important; }}
+.brand-landmark-label {{ color:#475569 !important; }}
+button[kind='primary'] {{ background:#1E40AF !important; color:#FFFFFF !important; border:1px solid #1E40AF !important; border-radius:8px !important; font-weight:700 !important; box-shadow:none !important; }}
+button[kind='primary']:hover {{ background:#1D4ED8 !important; border-color:#1D4ED8 !important; }}
+button[kind='secondary'] {{ background:#F1F5F9 !important; color:#1E293B !important; border:1px solid #CBD5E1 !important; border-radius:8px !important; }}
+button[kind='secondary']:hover {{ background:#E2E8F0 !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label {{ min-height:44px; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) {{ background:#1E40AF !important; border-color:#1E40AF !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) p {{ color:#FFFFFF !important; }}
 section[data-testid='stSidebar'] div[data-testid='stRadio'] div[role='radiogroup'] {{ flex-direction:column !important; align-items:stretch !important; }}
 section[data-testid='stSidebar'] div[data-testid='stRadio'] div[role='radiogroup'] label {{ width:100%; justify-content:flex-start !important; }}
-section[data-testid='stSidebar'] button[kind='secondary'] {{ min-height:42px; }}
-div[data-testid='stMetric'],.scorecard,.score-heading,.monitoring-sales-card,.monitoring-sales-fot,
-details[data-testid='stExpander'],[data-testid='stAlert'],[data-testid='stChatMessage'] {{
-  color:var(--foreground) !important; background:linear-gradient(150deg,#19243A 0%,#141F32 100%) !important;
-  border:1px solid rgba(148,163,184,.2) !important; border-radius:var(--radius-card) !important; box-shadow:var(--shadow-card) !important;
-}}
-div[data-testid='stMetric'] {{ padding:15px 17px !important; border-top:2px solid rgba(34,197,94,.7) !important; min-height:118px; }}
-div[data-testid='stMetric'] label,div[data-testid='stMetric'] [data-testid='stMetricLabel'] {{ color:#9BAAC0 !important; font-size:.78rem !important; font-weight:700 !important; letter-spacing:.035em; }}
-div[data-testid='stMetric'] [data-testid='stMetricValue'] {{ color:#F8FAFC !important; font-weight:800 !important; letter-spacing:-.035em; }}
-div[data-testid='stMetric'] [data-testid='stMetricDelta'] {{ font-size:.78rem !important; }}
-.score-heading {{ border-left:3px solid var(--accent) !important; color:#F8FAFC !important; font-family:'Fira Code',ui-monospace,monospace !important; font-size:.9rem !important; letter-spacing:.08em !important; text-shadow:none !important; white-space:normal !important; }}
-.scorecard {{ padding:15px 16px !important; min-height:280px !important; }}
-.score-program,.monitoring-sales-card__label {{ color:#99A8BD !important; }}
-.score-name,.score-row,.score-gap {{ color:#F1F5F9 !important; }}
-.score-filter,.score-ach,.weekly-plot-label {{ color:#AAB6C8 !important; }}
-.weekly-plot-track {{ background:#0C1525 !important; border-color:#38465C !important; }}
-.score-insight {{ color:#D6DEEA !important; }}
-.insight-low {{ background:rgba(248,113,113,.1) !important; border-left-color:var(--danger) !important; }}
-.insight-medium {{ background:rgba(251,191,36,.1) !important; border-left-color:var(--warning) !important; }}
-.insight-good {{ background:rgba(34,197,94,.1) !important; border-left-color:var(--accent) !important; }}
-.monitoring-sales-card,.monitoring-sales-fot {{ padding:15px 16px !important; min-height:86px; }}
-.monitoring-sales-card__value {{ color:#F8FAFC !important; font-family:'Fira Code',ui-monospace,monospace !important; }}
-.monitoring-sales-card:hover,.monitoring-sales-fot:hover,div[data-testid='stMetric']:hover {{ transform:translateY(-2px); border-color:rgba(74,222,128,.42) !important; box-shadow:0 16px 32px rgba(2,8,23,.4) !important; }}
-div[data-testid='stExpander'] summary,div[data-testid='stExpander'] summary p {{ color:#E2E8F0 !important; }}
-div[data-testid='stExpander'] details,div[data-testid='stExpander'] [data-testid='stExpanderDetails'] {{ background:transparent !important; }}
-div[data-testid='stDataFrame'],div[data-testid='stDataEditor'] {{
-  --gdg-text-dark:#E2E8F0; --gdg-text-medium:#BCC8D9; --gdg-text-header:#F8FAFC;
-  --gdg-bg-cell:#131E31; --gdg-bg-cell-medium:#19263B; --gdg-bg-header:#202F47; --gdg-bg-header-hover:#293B57;
-  border:1px solid #344158 !important; border-radius:13px !important; overflow:hidden; box-shadow:0 10px 28px rgba(2,8,23,.24) !important;
-}}
-div[data-testid='stTable'] table,.table-scroll-wrap table {{ background:#131E31 !important; color:#E2E8F0 !important; border-color:#344158 !important; border-collapse:separate !important; border-spacing:0 !important; border-radius:12px; overflow:hidden; }}
-div[data-testid='stTable'] th,div[data-testid='stTable'] th p,.table-scroll-wrap th {{ background:#202F47 !important; color:#DCE7F5 !important; border-color:#344158 !important; font-weight:750 !important; }}
-div[data-testid='stTable'] td,div[data-testid='stTable'] td p,.table-scroll-wrap td {{ background:#131E31 !important; color:#DCE5F1 !important; border-color:#2B384E !important; }}
-div[data-testid='stTable'] tbody tr:nth-child(even) td,.table-scroll-wrap tbody tr:nth-child(even) td {{ background:#18243A !important; }}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[role='combobox']:focus-visible,[role='button']:focus-visible,[role='radio']:focus-visible {{ outline:3px solid #1D4ED8 !important; outline-offset:2px !important; }}
+div[data-testid='stMetric'],.scorecard,.score-heading,.monitoring-sales-card,.monitoring-sales-fot,details[data-testid='stExpander'],[data-testid='stAlert'],[data-testid='stChatMessage'] {{ background:#FFFFFF !important; color:#1E293B !important; border-color:#D8E0EA !important; border-radius:12px !important; box-shadow:0 3px 12px rgba(15,23,42,.07) !important; }}
+div[data-testid='stMetric'] label,div[data-testid='stMetric'] [data-testid='stMetricLabel'],.score-filter,.score-ach,.weekly-plot-label,.monitoring-sales-card__label {{ color:#475569 !important; }}
+div[data-testid='stMetric'] [data-testid='stMetricValue'],.score-name,.score-row,.score-gap,.monitoring-sales-card__value {{ color:#1E293B !important; }}
+.score-program,.score-heading {{ color:#1E40AF !important; }}
+.score-metric {{ color:#334155 !important; }}
+.score-program,.score-filter,.score-metric,.score-ach,.weekly-plot,.weekly-plot-label,.score-insight {{ font-size:.76rem !important; line-height:1.35 !important; }}
+.negative-contribution {{ color:#991B1B !important; }}
+.on-track-contribution {{ color:#166534 !important; font-weight:750; }}
+.insight-low {{ background:#FEF2F2 !important; border-left-color:#B91C1C !important; }}
+.insight-medium {{ background:#FFFBEB !important; border-left-color:#B45309 !important; }}
+.insight-good {{ background:#F0FDF4 !important; border-left-color:#15803D !important; }}
+.insight-status-low {{ background:#B91C1C !important; color:#FFFFFF !important; }}
+.monitoring-sales-card__value--negative {{ color:#B91C1C !important; }}
+.monitoring-sales-fot strong {{ color:#9A4D00 !important; }}
+div[data-testid='stDataFrame'],div[data-testid='stDataEditor'] {{ --gdg-text-dark:#1E293B; --gdg-text-medium:#334155; --gdg-text-header:#1E293B; --gdg-bg-cell:#FFFFFF; --gdg-bg-cell-medium:#F3F6FB; --gdg-bg-header:#E9EEF6; --gdg-bg-header-hover:#DCE5F1; max-width:100%; border:1px solid #D8E0EA !important; overflow:auto !important; }}
+div[data-testid='stTable'] table,.table-scroll-wrap table {{ background:#FFFFFF !important; color:#1E293B !important; border:1px solid #D8E0EA !important; border-collapse:separate !important; border-spacing:0 !important; }}
+div[data-testid='stTable'] th,div[data-testid='stTable'] th p,.table-scroll-wrap th {{ background:#E9EEF6 !important; color:#1E293B !important; border-color:#D8E0EA !important; font-weight:750 !important; }}
+div[data-testid='stTable'] td,div[data-testid='stTable'] td p,.table-scroll-wrap td {{ color:#1E293B; border-color:#E2E8F0; }}
+.table-scroll-wrap {{ max-width:100%; overflow-x:auto !important; }}
+.table-scroll-wrap th,.table-scroll-wrap td {{ white-space:nowrap; }}
 div[data-testid='stVegaLiteChart'],.vega-embed,.vega-embed canvas,.vega-embed svg {{ background:transparent !important; }}
-[data-testid='stToolbar'],[data-testid='stStatusWidget'] {{ color:#CBD5E1 !important; }}
-@media (max-width: 900px) {{
-  .stMainBlockContainer {{ padding-left:1rem !important; padding-right:1rem !important; }}
-  div[data-testid='stHorizontalBlock'] {{ gap:.75rem; }}
-  .brand {{ min-height:102px !important; }}
-}}
-@media (prefers-reduced-motion: no-preference) {{
-  .stMainBlockContainer [data-testid='stVerticalBlock'] > [data-testid='stElementContainer'],
-  section[data-testid='stSidebar'] [data-testid='stElementContainer'] {{ animation-duration:.36s !important; }}
-}}
-@media (max-width: 640px) {{
-  .stMainBlockContainer {{ padding: .65rem .7rem 2rem !important; }}
+hr {{ border-color:#D8E0EA !important; }}
+@media (max-width:900px) {{ .stMainBlockContainer {{ padding-left:1rem !important; padding-right:1rem !important; }} }}
+@media (max-width:640px) {{
+  .stMainBlockContainer {{ padding:.65rem .7rem 2rem !important; }}
   div[data-testid='stHorizontalBlock'] {{ flex-wrap:wrap !important; gap:.65rem !important; }}
   div[data-testid='stHorizontalBlock'] > div[data-testid='column'] {{ min-width:100% !important; flex:1 1 100% !important; }}
   div[data-testid='stRadio'] div[role='radiogroup'] {{ align-items:stretch; gap:6px; }}
-  div[data-testid='stRadio'] div[role='radiogroup'] label {{ flex:1 1 auto; padding:8px 10px; }}
+  div[data-testid='stRadio'] div[role='radiogroup'] label {{ flex:1 1 auto; }}
   .brand {{ min-height:94px !important; padding:9px 10px !important; gap:8px !important; }}
   .brand-aam-logo {{ width:48px !important; height:48px !important; }}
   .brand-chp-logo {{ width:62px !important; height:46px !important; }}
@@ -1885,12 +1810,8 @@ div[data-testid='stVegaLiteChart'],.vega-embed,.vega-embed canvas,.vega-embed sv
   .brand-caption {{ font-size:.75rem !important; gap:5px !important; }}
   .brand-landmark-label {{ display:none !important; }}
   div[data-testid='stDataFrame'],div[data-testid='stDataEditor'],.table-scroll-wrap {{ max-width:calc(100vw - 1.4rem) !important; overflow-x:auto !important; }}
-  div[data-testid='stMetric'] {{ min-height:0; }}
 }}
-@media (prefers-reduced-motion: reduce) {{
-  *,*::before,*::after {{ animation-duration:.01ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-duration:.01ms !important; }}
-  .brand,.scorecard,.monitoring-sales-card,.monitoring-sales-fot,div[data-testid='stMetric'] {{ animation:none !important; transform:none !important; }}
-}}
+@media (prefers-reduced-motion:reduce) {{ *,*::before,*::after {{ animation-duration:.01ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-duration:.01ms !important; }} }}
 </style>
 """,unsafe_allow_html=True)
 if branch_header_img:
@@ -5504,8 +5425,8 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
             bars=alt.Chart(trend).transform_fold(["Sales","Target"],as_=["Jenis","Nilai"]).mark_bar(size=25,opacity=.9,tooltip=False).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist(),axis=alt.Axis(title="BULAN",labelAngle=-30,labelPadding=7)),
                 xOffset=alt.XOffset("Jenis:N"),y=alt.Y("Nilai:Q",title="Sales Value Gross / Target",scale=alt.Scale(domainMin=0),axis=alt.Axis(format="~s",titlePadding=10)),
-                color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#20B2AA","#CBD5E1"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)))
-            line=alt.Chart(trend).mark_line(color="#FF5B63",strokeDash=[7,5],strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=58),tooltip=False).encode(
+                color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#0F766E","#64748B"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)))
+            line=alt.Chart(trend).mark_line(color="#B91C1C",strokeDash=[7,5],strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=58),tooltip=False).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist()),y=alt.Y("A/T %:Q",title="A/T (%)",scale=alt.Scale(domain=[0,at_axis_max]),axis=alt.Axis(orient="right",format=".0f",labelExpr="datum.value + '%'",grid=False,titlePadding=10)),
             )
             combo=alt.layer(bars,line).resolve_scale(y="independent").properties(height=350,padding={"left":10,"right":8,"top":8,"bottom":2})
@@ -6345,16 +6266,16 @@ elif page=="Summary Program":
                               if weekly_actual is not None and weekly_target is not None else None)
             # Warna progress mingguan menunjukkan apakah target mingguannya sudah
             # tercapai, terpisah dari warna pencapaian target bulanan.
-            weekly_color="#39C77B" if weekly_achievement is not None and weekly_achievement>=100 else RED
+            weekly_color="#166534" if weekly_achievement is not None and weekly_achievement>=100 else "#991B1B"
             actual_text=fmt_summary(actual,selected["metric"])
             if selected["metric"]!="Total Sales" and actual is not None: actual_text+= " relasi"
             ach_text=f"{achievement:,.1f}%" if achievement is not None else "—"
             if achievement is None or achievement<60:
-                ach_color=RED
+                ach_color="#991B1B"
             elif achievement<90:
-                ach_color="#F5C542"
+                ach_color="#9A4D00"
             else:
-                ach_color="#39C77B"
+                ach_color="#166534"
             if selected["metric"]=="Total Sales":
                 deviation_text=fmt_summary(deviation,selected["metric"])
             else:
@@ -6484,7 +6405,7 @@ elif page=="Summary Program":
                     xOffset=alt.XOffset("Jenis:N"),
                     color=alt.Color(
                         "Jenis:N",
-                        scale=alt.Scale(domain=["Actual","Target"],range=["#20B2AA","#CBD5E1"]),
+                        scale=alt.Scale(domain=["Actual","Target"],range=["#0F766E","#64748B"]),
                         legend=alt.Legend(orient="top",direction="horizontal",title=None),
                     ),
                 ).properties(height=max(220,42*len(_overview_df)))
@@ -6521,7 +6442,7 @@ elif page=="Summary Program":
                         "Status:N",
                         scale=alt.Scale(
                             domain=["Rendah","Sedang","Tercapai"],
-                            range=["#C8102E","#F5C542","#39C77B"],
+                            range=["#B91C1C","#9A4D00","#166534"],
                         ),
                         legend=None,
                     ),
@@ -7049,7 +6970,7 @@ elif page=="Sasaran Program":
                 pending=visit_table.loc[visit_table[status_col].eq("○ Belum"),"Relasi"].nunique()
                 potential_rows.append({"Program":program_label(prog),"Sudah transaksi":done,"Belum transaksi":pending})
             potential=pd.DataFrame(potential_rows)
-            st.bar_chart(potential,x="Program",y=["Sudah transaksi","Belum transaksi"],color=["#39C77B","#F5C542"],horizontal=True,stack=True,height=min(420,max(220,48*len(potential)+60)))
+            st.bar_chart(potential,x="Program",y=["Sudah transaksi","Belum transaksi"],color=["#166534","#9A4D00"],horizontal=True,stack=True,height=min(420,max(220,48*len(potential)+60)))
             st.markdown("##### Ringkasan potensi belum transaksi per program")
             potential_summary=[]
             pending_rows_by_program={status_col:visit_table.loc[visit_table[status_col].eq("○ Belum"),["Sales Person Title","Relasi"]]
