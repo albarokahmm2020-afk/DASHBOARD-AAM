@@ -19,11 +19,11 @@ File `.xlsx` akan dipakai jika tersedia untuk bulan yang sama dengan `.csv`, jad
 
 ## Penyimpanan laporan dan data operasional
 
-Akun layanan Google tidak memiliki kuota untuk menyimpan file di My Drive. Tujuan sinkronisasi default sudah diatur ke folder Shared Drive yang diberikan. Tambahkan akun layanan dari `gcp_service_account.client_email` sebagai anggota Shared Drive dengan peran **Kontributor** atau lebih tinggi. Jika perlu mengganti tujuan, atur ID folder di secrets Streamlit:
+Akun layanan Google tidak memiliki kuota untuk menyimpan file di My Drive. Folder Shared Drive [yang Anda kirim](https://drive.google.com/drive/folders/1Ef0DsWdqJ-fy7ahuQ0NR3H1dO2QkHk4b) menjadi sumber database sekaligus root penyimpanan default (`1Ef0DsWdqJ-fy7ahuQ0NR3H1dO2QkHk4b`). Aplikasi menulis data operasional ke subfolder `Dashboard_Data/` dan ekspor ke `Dashboard_Exports/`, terpisah dari `database_monthly_split/`. Tambahkan akun layanan dari `gcp_service_account.client_email` sebagai anggota Shared Drive dengan peran **Kontributor** atau lebih tinggi. Jika perlu mengganti tujuan, atur ID folder di secrets Streamlit:
 
 ```toml
 [google_drive]
 storage_folder_id = "ID_FOLDER_SHARED_DRIVE"
 ```
 
-`storage_folder_id` adalah ID folder tujuan di dalam Shared Drive, bukan URL atau `database_folder_id`. Nilai ini terpisah dari `database_folder_id`, yang tetap digunakan sebagai sumber database. Folder default hanya berfungsi jika akun layanan punya izin menambah file di dalamnya. Jangan masukkan kredensial akun layanan ke repository.
+`storage_folder_id` adalah ID folder tujuan di dalam Shared Drive, bukan URL atau ID Shared Drive. Nilai ini merupakan pengaturan terpisah dari `database_folder_id`, walau keduanya boleh memakai folder root yang sama karena aplikasi menyimpan file operasional di subfolder khusus. Jika `storage_folder_id` di Streamlit Secrets masih menunjuk ke ID default lama `1E88RgFi_zTHzsJZzD0RVztdcS5Wecc6e`, aplikasi otomatis memakai folder baru di atas. Jika berisi ID khusus lain, hapus atau ganti dengan `1Ef0DsWdqJ-fy7ahuQ0NR3H1dO2QkHk4b`. Folder default hanya berfungsi jika akun layanan punya izin menambah file di dalamnya. Jangan masukkan kredensial akun layanan ke repository.
