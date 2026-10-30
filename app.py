@@ -3179,7 +3179,9 @@ def append_daily_additions(scoped,by_title,metric):
     daily["_date"]=pd.to_datetime(daily[date_col],errors="coerce").dt.normalize()
     daily=daily.dropna(subset=["_date"])
     dates=sorted(daily["_date"].dropna().unique())
-    daily["_title"]=daily[title_col].fillna("<NA>").astype(str)
+    # Normalize categoricals before inserting the missing-title sentinel. A
+    # categorical column rejects values that are not already in its categories.
+    daily["_title"]=daily[title_col].astype("string").fillna("<NA>").astype(str)
     daily["_sales"]=pd.to_numeric(daily[sales_col],errors="coerce").fillna(0)
     eligible=daily.copy() if metric=="Total Sales" else daily[daily["_sales"]>0].copy()
     if metric=="Total Sales":
@@ -5603,7 +5605,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     title_table=title_month.merge(title_ytd,on="Sales Person Title",how="outer",suffixes=("_Bulanan","_Kumulatif"))
                     for value_col in ["ACT_Bulanan","TGT_Bulanan","ACT_Kumulatif","TGT_Kumulatif"]:
                         title_table[value_col]=pd.to_numeric(title_table[value_col],errors="coerce").fillna(0)
-                    title_table["Sales Person Title"]=title_table["Sales Person Title"].replace("","(Tidak tercantum)").fillna("(Tidak tercantum)").astype(str)
+                    title_table["Sales Person Title"]=title_table["Sales Person Title"].astype("string").replace("","(Tidak tercantum)").fillna("(Tidak tercantum)").astype(str)
                     for suffix in ["_Bulanan","_Kumulatif"]:
                         title_table[f"A/T{suffix}"]=title_table[f"ACT{suffix}"].div(title_table[f"TGT{suffix}"].replace(0,float("nan")))*100
                         title_table[f"DEV{suffix}"]=title_table[f"ACT{suffix}"]-title_table[f"TGT{suffix}"]
