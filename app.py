@@ -828,9 +828,11 @@ ASSET_DIR=APP_DIR/"assets"
 if not ASSET_DIR.exists():
     ASSET_DIR=APP_DIR
 BRANCH_OPTIONS={"BDG":"Bandung","PTK":"Pontianak","MDN":"Medan"}
-# Folder link provided by the user. An explicit file ID in secrets overrides it.
+# Shared Drive folder provided for database access. Operational writes use
+# isolated Dashboard_Data and Dashboard_Exports subfolders beneath this root.
 DEFAULT_DRIVE_DATABASE_FOLDER_ID="1Ef0DsWdqJ-fy7ahuQ0NR3H1dO2QkHk4b"
-DEFAULT_DRIVE_STORAGE_FOLDER_ID="1E88RgFi_zTHzsJZzD0RVztdcS5Wecc6e"
+DEFAULT_DRIVE_STORAGE_FOLDER_ID=DEFAULT_DRIVE_DATABASE_FOLDER_ID
+LEGACY_DEFAULT_DRIVE_STORAGE_FOLDER_ID="1E88RgFi_zTHzsJZzD0RVztdcS5Wecc6e"
 class _DriveStorageFolderNotSharedDriveError(RuntimeError):
     pass
 
@@ -864,7 +866,13 @@ def _drive_storage_folder(category, branch=None):
     """Return/create a folder under a writable folder in a Shared Drive."""
     from google.auth.transport.requests import AuthorizedSession
     drive_settings=st.secrets.get("google_drive",{})
-    root_id=str(drive_settings.get("storage_folder_id",DEFAULT_DRIVE_STORAGE_FOLDER_ID)).strip()
+    configured_root=drive_settings.get("storage_folder_id")
+    # Migrate the previous built-in destination if it was copied into Cloud
+    # Secrets. An explicit newer destination still takes precedence.
+    if configured_root is None or str(configured_root).strip()==LEGACY_DEFAULT_DRIVE_STORAGE_FOLDER_ID:
+        root_id=DEFAULT_DRIVE_STORAGE_FOLDER_ID
+    else:
+        root_id=str(configured_root).strip()
     if not root_id:
         raise RuntimeError("Sinkronisasi perlu Shared Drive. Atur [google_drive].storage_folder_id ke ID folder tujuan di Shared Drive.")
     response=AuthorizedSession(_drive_service_credentials()).get(
@@ -877,7 +885,10 @@ def _drive_storage_folder(category, branch=None):
     response.raise_for_status()
     root=response.json()
     if root.get("mimeType")!="application/vnd.google-apps.folder" or not root.get("driveId"):
-        raise _DriveStorageFolderNotSharedDriveError("storage_folder_id bukan folder di Shared Drive.")
+        raise _DriveStorageFolderNotSharedDriveError(
+            "storage_folder_id harus berupa ID folder di dalam Shared Drive. "
+            "Perbarui [google_drive].storage_folder_id di Streamlit Secrets atau hapus nilai lama agar memakai folder data default."
+        )
     if root.get("capabilities",{}).get("canAddChildren") is False:
         raise RuntimeError("Akun layanan dapat melihat Shared Drive tetapi tidak dapat menambah file. Berikan peran Kontributor atau Pengelola Konten.")
     folder_id=_drive_folder_id("Dashboard_Data" if category!="exports" else "Dashboard_Exports",root_id)
