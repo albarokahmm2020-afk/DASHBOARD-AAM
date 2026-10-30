@@ -1036,7 +1036,9 @@ def _reset_branch_session():
             del st.session_state[_state_key]
 if "active_branch_code" not in st.session_state:
     st.session_state["active_branch_code"]="BDG"
-_branch_choice=st.selectbox("Pilih Cabang",list(BRANCH_OPTIONS),format_func=lambda code:f"{BRANCH_OPTIONS[code]} ({code})",key="active_branch_code",on_change=_reset_branch_session)
+with st.sidebar:
+    st.markdown("<div class='sidebar-eyebrow'>WORKSPACE</div>",unsafe_allow_html=True)
+    _branch_choice=st.selectbox("Pilih Cabang",list(BRANCH_OPTIONS),format_func=lambda code:f"{BRANCH_OPTIONS[code]} ({code})",key="active_branch_code",on_change=_reset_branch_session)
 ACTIVE_BRANCH_CODE=_branch_choice
 ACTIVE_BRANCH_NAME=BRANCH_OPTIONS[ACTIVE_BRANCH_CODE]
 UI_ACCENT={"BDG":"#20B2AA","PTK":"#6366F1","MDN":"#28A745"}[ACTIVE_BRANCH_CODE]
@@ -1752,6 +1754,145 @@ details[data-testid='stExpander'] summary {{ color: #1E293B !important; }}
 }}
 </style>
 """, unsafe_allow_html=True)
+st.markdown(f"""
+<style>
+:root {{
+  color-scheme: dark;
+  --canvas: #0F172A;
+  --surface: #151F33;
+  --surface-raised: #1B2336;
+  --surface-muted: #202B40;
+  --foreground: #F8FAFC;
+  --muted-foreground: #A5B1C4;
+  --border: #344158;
+  --accent: #22C55E;
+  --accent-soft: rgba(34,197,94,.14);
+  --branch-accent: {UI_ACCENT};
+  --danger: #F87171;
+  --warning: #FBBF24;
+  --radius-card: 16px;
+  --shadow-card: 0 14px 34px rgba(2,8,23,.28);
+}}
+html, body, .stApp {{
+  background: var(--canvas) !important;
+  color: var(--foreground) !important;
+  font-family: 'Fira Sans', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  font-size: 15px;
+  line-height: 1.5;
+}}
+.stApp {{ background-image: radial-gradient(ellipse at 85% 0%, rgba(34,197,94,.065), transparent 34%), linear-gradient(180deg,#0F172A 0%,#0B1220 100%) !important; }}
+.stMainBlockContainer {{ max-width: 1680px; padding-top: 1.15rem !important; padding-bottom: 3rem !important; background: transparent !important; }}
+h1,h2,h3,h4,h5,h6,p,label,[data-testid='stMarkdownContainer'],[data-testid='stCaptionContainer'] {{ color: var(--foreground); }}
+h1,h2,h3 {{ letter-spacing: -.025em; }}
+[data-testid='stCaptionContainer'],[data-testid='stCaptionContainer'] p {{ color: var(--muted-foreground) !important; }}
+section[data-testid='stSidebar'] {{ background: linear-gradient(180deg,#111B2D 0%,#0E1727 100%) !important; border-right: 1px solid rgba(148,163,184,.16); }}
+section[data-testid='stSidebar'] > div {{ padding: 1.15rem .9rem 1.5rem; }}
+section[data-testid='stSidebar'] h1,section[data-testid='stSidebar'] h2,section[data-testid='stSidebar'] h3,
+section[data-testid='stSidebar'] p,section[data-testid='stSidebar'] label,
+section[data-testid='stSidebar'] [data-testid='stCaptionContainer'] {{ color: var(--foreground) !important; }}
+.sidebar-eyebrow {{ color:#8FA0B9; font-size:.68rem; font-weight:800; letter-spacing:.16em; margin:0 0 .45rem .15rem; }}
+.brand {{ min-height:116px !important; border:1px solid rgba(148,163,184,.23) !important; border-left:4px solid var(--accent) !important; border-bottom:1px solid rgba(148,163,184,.18) !important; border-radius:18px !important; background:linear-gradient(105deg,rgba(21,31,51,.97),rgba(16,30,48,.94) 60%,rgba(22,44,61,.94)) !important; box-shadow:var(--shadow-card) !important; }}
+.brand-backdrop {{ opacity:.25 !important; mix-blend-mode:screen; }}
+.brand h1 {{ color:#F8FAFC !important; }}
+.brand-caption,.brand small {{ color:#CBD5E1 !important; }}
+.brand-caption .bandung-badge {{ background:var(--accent-soft) !important; border:1px solid rgba(34,197,94,.42) !important; color:#86EFAC !important; }}
+.brand-landmark-label {{ color:#97A7BD !important; }}
+.brand--reference {{ border:1px solid rgba(148,163,184,.2) !important; border-radius:18px !important; overflow:hidden !important; }}
+div[data-baseweb='select'] > div,input,textarea,
+[data-testid='stMultiSelect'] [role='group'],[data-testid='stSelectbox'] [role='group'] {{
+  background:#121C2E !important; color:var(--foreground) !important; border-color:var(--border) !important; border-radius:10px !important;
+}}
+input::placeholder,textarea::placeholder {{ color:#8291A8 !important; }}
+div[data-baseweb='select'] > div:hover,input:hover,textarea:hover {{ border-color:#64748B !important; }}
+div[data-baseweb='popover'],[role='listbox'],[data-testid='stPopoverBody'] {{ background:#172237 !important; color:var(--foreground) !important; border:1px solid var(--border) !important; }}
+[data-baseweb='popover'] *,[role='listbox'] * {{ color:var(--foreground) !important; }}
+span[data-baseweb='tag'] {{ background:var(--accent-soft) !important; border:1px solid rgba(34,197,94,.36) !important; border-radius:7px !important; }}
+span[data-baseweb='tag'] span {{ color:#BBF7D0 !important; }}
+button[kind='primary'] {{ background:linear-gradient(135deg,#22C55E,#16A34A) !important; color:#052E16 !important; border:1px solid #4ADE80 !important; border-radius:10px !important; font-weight:750 !important; box-shadow:0 5px 16px rgba(34,197,94,.16) !important; }}
+button[kind='primary']:hover {{ filter:brightness(1.08); transform:translateY(-1px); }}
+button[kind='secondary'] {{ background:#202B40 !important; color:#E2E8F0 !important; border:1px solid #3A4962 !important; border-radius:10px !important; box-shadow:none !important; }}
+button[kind='secondary']:hover {{ background:#28364E !important; border-color:#64748B !important; }}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,
+[role='combobox']:focus-visible,[role='button']:focus-visible,[role='radio']:focus-visible,
+div[data-testid='stRadio'] label:has(input:focus-visible) {{ outline:3px solid #4ADE80 !important; outline-offset:3px !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'] {{ align-items:center; gap:7px; flex-wrap:wrap; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label > div:first-child,
+div[data-testid='stRadio'] div[role='radiogroup'] label[data-baseweb='radio'] > div[aria-hidden='true'],
+div[data-testid='stRadio'] div[role='radiogroup'] label input[type='radio'] {{ display:none !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label[data-baseweb='radio'] {{ appearance:none !important; -webkit-appearance:none !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label {{ min-height:44px; display:flex; align-items:center; justify-content:center; padding:8px 15px; background:#172237; border:1px solid #344158; border-radius:10px; transition:background .2s,border-color .2s,transform .2s; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label p {{ color:#C5D0DF !important; font-size:.94rem !important; font-weight:650 !important; line-height:1.25 !important; margin:0 !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) {{ background:var(--accent-soft) !important; border-color:rgba(34,197,94,.55) !important; box-shadow:inset 0 0 0 1px rgba(34,197,94,.12); }}
+div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) p {{ color:#A7F3D0 !important; }}
+div[data-testid='stRadio'] div[role='radiogroup'] label:hover:not(:has(input:checked)) {{ background:#202D43; border-color:#52627B; }}
+section[data-testid='stSidebar'] div[data-testid='stRadio'] div[role='radiogroup'] {{ flex-direction:column !important; align-items:stretch !important; }}
+section[data-testid='stSidebar'] div[data-testid='stRadio'] div[role='radiogroup'] label {{ width:100%; justify-content:flex-start !important; }}
+section[data-testid='stSidebar'] button[kind='secondary'] {{ min-height:42px; }}
+div[data-testid='stMetric'],.scorecard,.score-heading,.monitoring-sales-card,.monitoring-sales-fot,
+details[data-testid='stExpander'],[data-testid='stAlert'],[data-testid='stChatMessage'] {{
+  color:var(--foreground) !important; background:linear-gradient(150deg,#19243A 0%,#141F32 100%) !important;
+  border:1px solid rgba(148,163,184,.2) !important; border-radius:var(--radius-card) !important; box-shadow:var(--shadow-card) !important;
+}}
+div[data-testid='stMetric'] {{ padding:15px 17px !important; border-top:2px solid rgba(34,197,94,.7) !important; min-height:118px; }}
+div[data-testid='stMetric'] label,div[data-testid='stMetric'] [data-testid='stMetricLabel'] {{ color:#9BAAC0 !important; font-size:.78rem !important; font-weight:700 !important; letter-spacing:.035em; }}
+div[data-testid='stMetric'] [data-testid='stMetricValue'] {{ color:#F8FAFC !important; font-weight:800 !important; letter-spacing:-.035em; }}
+div[data-testid='stMetric'] [data-testid='stMetricDelta'] {{ font-size:.78rem !important; }}
+.score-heading {{ border-left:3px solid var(--accent) !important; color:#F8FAFC !important; font-family:'Fira Code',ui-monospace,monospace !important; font-size:.9rem !important; letter-spacing:.08em !important; text-shadow:none !important; white-space:normal !important; }}
+.scorecard {{ padding:15px 16px !important; min-height:280px !important; }}
+.score-program,.monitoring-sales-card__label {{ color:#99A8BD !important; }}
+.score-name,.score-row,.score-gap {{ color:#F1F5F9 !important; }}
+.score-filter,.score-ach,.weekly-plot-label {{ color:#AAB6C8 !important; }}
+.weekly-plot-track {{ background:#0C1525 !important; border-color:#38465C !important; }}
+.score-insight {{ color:#D6DEEA !important; }}
+.insight-low {{ background:rgba(248,113,113,.1) !important; border-left-color:var(--danger) !important; }}
+.insight-medium {{ background:rgba(251,191,36,.1) !important; border-left-color:var(--warning) !important; }}
+.insight-good {{ background:rgba(34,197,94,.1) !important; border-left-color:var(--accent) !important; }}
+.monitoring-sales-card,.monitoring-sales-fot {{ padding:15px 16px !important; min-height:86px; }}
+.monitoring-sales-card__value {{ color:#F8FAFC !important; font-family:'Fira Code',ui-monospace,monospace !important; }}
+.monitoring-sales-card:hover,.monitoring-sales-fot:hover,div[data-testid='stMetric']:hover {{ transform:translateY(-2px); border-color:rgba(74,222,128,.42) !important; box-shadow:0 16px 32px rgba(2,8,23,.4) !important; }}
+div[data-testid='stExpander'] summary,div[data-testid='stExpander'] summary p {{ color:#E2E8F0 !important; }}
+div[data-testid='stExpander'] details,div[data-testid='stExpander'] [data-testid='stExpanderDetails'] {{ background:transparent !important; }}
+div[data-testid='stDataFrame'],div[data-testid='stDataEditor'] {{
+  --gdg-text-dark:#E2E8F0; --gdg-text-medium:#BCC8D9; --gdg-text-header:#F8FAFC;
+  --gdg-bg-cell:#131E31; --gdg-bg-cell-medium:#19263B; --gdg-bg-header:#202F47; --gdg-bg-header-hover:#293B57;
+  border:1px solid #344158 !important; border-radius:13px !important; overflow:hidden; box-shadow:0 10px 28px rgba(2,8,23,.24) !important;
+}}
+div[data-testid='stTable'] table,.table-scroll-wrap table {{ background:#131E31 !important; color:#E2E8F0 !important; border-color:#344158 !important; border-collapse:separate !important; border-spacing:0 !important; border-radius:12px; overflow:hidden; }}
+div[data-testid='stTable'] th,div[data-testid='stTable'] th p,.table-scroll-wrap th {{ background:#202F47 !important; color:#DCE7F5 !important; border-color:#344158 !important; font-weight:750 !important; }}
+div[data-testid='stTable'] td,div[data-testid='stTable'] td p,.table-scroll-wrap td {{ background:#131E31 !important; color:#DCE5F1 !important; border-color:#2B384E !important; }}
+div[data-testid='stTable'] tbody tr:nth-child(even) td,.table-scroll-wrap tbody tr:nth-child(even) td {{ background:#18243A !important; }}
+div[data-testid='stVegaLiteChart'],.vega-embed,.vega-embed canvas,.vega-embed svg {{ background:transparent !important; }}
+[data-testid='stToolbar'],[data-testid='stStatusWidget'] {{ color:#CBD5E1 !important; }}
+@media (max-width: 900px) {{
+  .stMainBlockContainer {{ padding-left:1rem !important; padding-right:1rem !important; }}
+  div[data-testid='stHorizontalBlock'] {{ gap:.75rem; }}
+  .brand {{ min-height:102px !important; }}
+}}
+@media (prefers-reduced-motion: no-preference) {{
+  .stMainBlockContainer [data-testid='stVerticalBlock'] > [data-testid='stElementContainer'],
+  section[data-testid='stSidebar'] [data-testid='stElementContainer'] {{ animation-duration:.36s !important; }}
+}}
+@media (max-width: 640px) {{
+  .stMainBlockContainer {{ padding: .65rem .7rem 2rem !important; }}
+  div[data-testid='stHorizontalBlock'] {{ flex-wrap:wrap !important; gap:.65rem !important; }}
+  div[data-testid='stHorizontalBlock'] > div[data-testid='column'] {{ min-width:100% !important; flex:1 1 100% !important; }}
+  div[data-testid='stRadio'] div[role='radiogroup'] {{ align-items:stretch; gap:6px; }}
+  div[data-testid='stRadio'] div[role='radiogroup'] label {{ flex:1 1 auto; padding:8px 10px; }}
+  .brand {{ min-height:94px !important; padding:9px 10px !important; gap:8px !important; }}
+  .brand-aam-logo {{ width:48px !important; height:48px !important; }}
+  .brand-chp-logo {{ width:62px !important; height:46px !important; }}
+  .brand h1 {{ font-size:1.25rem !important; }}
+  .brand-caption {{ font-size:.75rem !important; gap:5px !important; }}
+  .brand-landmark-label {{ display:none !important; }}
+  div[data-testid='stDataFrame'],div[data-testid='stDataEditor'],.table-scroll-wrap {{ max-width:calc(100vw - 1.4rem) !important; overflow-x:auto !important; }}
+  div[data-testid='stMetric'] {{ min-height:0; }}
+}}
+@media (prefers-reduced-motion: reduce) {{
+  *,*::before,*::after {{ animation-duration:.01ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-duration:.01ms !important; }}
+  .brand,.scorecard,.monitoring-sales-card,.monitoring-sales-fot,div[data-testid='stMetric'] {{ animation:none !important; transform:none !important; }}
+}}
+</style>
+""",unsafe_allow_html=True)
 if branch_header_img:
     _branch_header_html=f"<div class='brand brand--reference'>{branch_header_img}</div>"
 else:
@@ -1766,17 +1907,17 @@ if "dashboard_section" not in st.session_state:
 if "nav_minimized" not in st.session_state:
     st.session_state["nav_minimized"]=False
 if st.session_state["nav_minimized"]:
-    if st.button("☰ Tampilkan navigasi",key="show_dashboard_navigation"):
-        st.session_state["nav_minimized"]=False
-        st.rerun()
+    with st.sidebar:
+        if st.button("☰ Tampilkan navigasi",key="show_dashboard_navigation",use_container_width=True):
+            st.session_state["nav_minimized"]=False
+            st.rerun()
     main_section=st.session_state.get("dashboard_section",settings.get("dashboard_section","Program Push"))
     page=st.session_state.get("dashboard_page",settings.get("dashboard_page","Summary Program")) if main_section=="Program Push" else None
 else:
-    nav_cols=st.columns([7,1])
-    with nav_cols[0]:
-        main_section=st.radio("Dashboard CHP AAM",["Performance Sales","Program Push","Menu Insentif","Report"],horizontal=True,key="dashboard_section")
-    with nav_cols[1]:
-        if st.button("− Minimize",key="minimize_dashboard_navigation",help="Sembunyikan navigasi utama."):
+    with st.sidebar:
+        st.markdown("<div class='sidebar-eyebrow'>NAVIGASI UTAMA</div>",unsafe_allow_html=True)
+        main_section=st.radio("Dashboard CHP AAM",["Performance Sales","Program Push","Menu Insentif","Report"],horizontal=False,key="dashboard_section",label_visibility="collapsed")
+        if st.button("− Sembunyikan navigasi",key="minimize_dashboard_navigation",help="Sembunyikan navigasi utama.",use_container_width=True):
             st.session_state["nav_minimized"]=True
             st.rerun()
     if main_section=="Program Push":
