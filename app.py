@@ -816,6 +816,14 @@ PROGRAM_SUMMARIES = {
     "PB LUMA": "Monitoring program PB LUMA dengan fokus LASERIN UNTUK MASUK ANGIN (LUMA).",
 }
 MONTHS = {1:"January",2:"February",3:"March",4:"April",5:"May",6:"June",7:"July",8:"August",9:"September",10:"October",11:"November",12:"December"}
+_MONTH_NAME_TO_NUMBER={str(name).casefold():number for number,name in MONTHS.items()}
+_MONTH_NAME_TO_NUMBER.update({"jan":1,"feb":2,"mar":3,"apr":4,"may":5,"jun":6,"jul":7,"aug":8,"sep":9,"oct":10,"nov":11,"dec":12,"januari":1,"februari":2,"maret":3,"mei":5,"juni":6,"juli":7,"agustus":8,"oktober":10,"desember":12})
+def _month_number_series(values):
+    """Normalize numeric, English, and Indonesian month values to 1–12."""
+    numeric=pd.to_numeric(values,errors="coerce")
+    labels=values.astype("string").str.strip().str.casefold().str.replace(".","",regex=False)
+    parsed=numeric.fillna(labels.map(_MONTH_NAME_TO_NUMBER))
+    return parsed.where(parsed.between(1,12))
 ALIASES = {
  "year": ["year","tahun"], "month": ["month","bulan"], "date": ["full date","date","transaction date","tanggal"], "business_group": ["bisnis group","business group","business_group","group business"], "principal_name": ["principal"], "principal": ["principal id","principal_id","principle id"],
  "product_code": ["product code","product_code","kode produk"], "channel_group": ["channel group","channel_group","group channel"], "product": ["product description","product_description","product","description produk"],
@@ -2758,7 +2766,7 @@ if main_section=="Program Push" and "_active_push_month" in dir():
             with _c1:
                 _name_key=f"pbm2_name_{_active_push_month}_{key(_p).replace(' ','_')}"
                 _sync_config_widget(_name_key,_sn)
-                _nn = st.text_input("Nama",value=_sn,
+                _nn = st.text_input("Nama",
                     key=_name_key,
                     label_visibility="collapsed", placeholder=f"Nama program {PROGRAM_NUMBERS.get(_p,'')}")
             with _c2:
@@ -3751,7 +3759,7 @@ if main_section=="Menu Insentif":
     _yr_c_ins = next((c for c in df.columns if c.lower()=="year"), None)
     _mn_c_ins = next((c for c in df.columns if c.lower()=="month"), None)
     _yr_opts = sorted(df[_yr_c_ins].dropna().astype(int).unique().tolist()) if _yr_c_ins else [_def_yr]
-    _mn_opts = sorted(df[_mn_c_ins].dropna().astype(int).unique().tolist()) if _mn_c_ins else list(range(1,13))
+    _mn_opts = sorted(_month_number_series(df[_mn_c_ins]).dropna().astype(int).unique().tolist()) if _mn_c_ins else list(range(1,13))
 
     _ins_filt_cols = st.columns([1,1,3])
     with _ins_filt_cols[0]:
@@ -3799,7 +3807,7 @@ if main_section=="Menu Insentif":
             base = base[pd.to_numeric(base[yr_c],errors="coerce")==int(sel_year)]
         bm = base.copy()  # base untuk bulan berjalan
         if mn_c and sel_month:
-            bm = base[pd.to_numeric(base[mn_c],errors="coerce")==int(sel_month)]
+            bm = base[_month_number_series(base[mn_c])==int(sel_month)]
 
         out = {}; notes = {}
 
@@ -3947,7 +3955,7 @@ if main_section=="Menu Insentif":
             if sel_year and sel_month:
                 cur_rows = chp_base[
                     (pd.to_numeric(chp_base[yr_c],errors="coerce")==int(sel_year)) &
-                    (pd.to_numeric(chp_base[mn_c],errors="coerce")==int(sel_month))
+                    (_month_number_series(chp_base[mn_c])==int(sel_month))
                 ]
                 rb_cur = int(cur_rows[cust_c].dropna().astype(str).str.strip().nunique())
 
@@ -3955,7 +3963,7 @@ if main_section=="Menu Insentif":
             rows_2025 = chp_base[pd.to_numeric(chp_base[yr_c],errors="coerce")==2025]
             if not rows_2025.empty and mn_c:
                 rb_by_month_2025 = rows_2025.groupby(
-                    pd.to_numeric(rows_2025[mn_c],errors="coerce")
+                    _month_number_series(rows_2025[mn_c])
                 )[cust_c].nunique()
                 avg_rb_2025 = float(rb_by_month_2025.mean()) if not rb_by_month_2025.empty else 0.0
             else:
@@ -5407,7 +5415,7 @@ elif main_section=="Report":
 
 elif main_section=="Performance Sales":
     st.markdown("<div class='score-heading'>PERFORMANCE SALES · GROSS</div>",unsafe_allow_html=True)
-    bg_col=col(df,"business_group"); date_col=col(df,"date"); principal_col=col(df,"principal"); sales_col=col(df,"sales"); target_value_col=col(df,"target_value")
+    bg_col=col(df,"business_group"); date_col=col(df,"date"); principal_col=col(df,"principal"); principal_name_col=col(df,"principal_name"); sales_col=col(df,"sales"); target_value_col=col(df,"target_value")
     if not all([bg_col,date_col,principal_col,sales_col,target_value_col]):
         missing=[label for label,c in [("Bisnis Group",bg_col),("Full Date",date_col),("Principal ID",principal_col),("Sales Value Gross",sales_col),("Target Value",target_value_col)] if not c]
         st.error("Kolom database belum lengkap untuk Performance Sales: "+", ".join(missing))
@@ -5643,18 +5651,39 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
             with _layout_cols[0]:
                 st.markdown("#### Kuadran Principal ID")
                 if principal_col:
-                    _quad_pid=month_df.groupby(principal_col,dropna=False).agg(Actual=("_perf_sales","sum"),Target=("_perf_target","sum")).reset_index().rename(columns={principal_col:"Principal ID"})
+                    _quad_pid=month_df.groupby(principal_col,dropna=False).agg(Actual=("_perf_sales","sum"),Target=("_perf_target","sum")).reset_index()
+                    if principal_name_col:
+                        def _principal_name_label(values):
+                            names=values.dropna().astype(str).str.strip()
+                            names=names[~names.str.casefold().isin({"","none","nan","<na>"})]
+                            return names.iloc[0] if not names.empty else "(Nama tidak tercantum)"
+                        _principal_names=month_df.groupby(principal_col,dropna=False)[principal_name_col].agg(_principal_name_label).reset_index(name="Nama Principal")
+                        _quad_pid=_quad_pid.merge(_principal_names,on=principal_col,how="left")
+                    else:
+                        _quad_pid["Nama Principal"]="(Nama tidak tersedia)"
+                    _quad_pid=_quad_pid.rename(columns={principal_col:"Principal ID"})
                     _quad_pid["Principal ID"]=_quad_pid["Principal ID"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Tidak tercantum)").astype(str)
+                    _quad_pid["Nama Principal"]=_quad_pid["Nama Principal"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Nama tidak tercantum)").astype(str)
                     _quad_pid["A/T %"]=_quad_pid["Actual"].div(_quad_pid["Target"].replace(0,float("nan")))*100
                     _quad_pid["Kontribusi %"]=_quad_pid["Actual"].div(max(float(_quad_pid["Actual"].sum()),1))*100
                     _quad_pid["Gap"]=_quad_pid["Actual"]-_quad_pid["Target"]
+                    def _compact_quadrant_amount(value):
+                        value=float(value)
+                        if abs(value)>=1_000_000:
+                            return f"{value/1_000_000:,.1f} Jt"
+                        if abs(value)>=1_000:
+                            return f"{value/1_000:,.0f} Rb"
+                        return f"{value:,.0f}"
+                    for _raw,_display in [("Actual","Actual Ringkas"),("Target","Target Ringkas"),("Gap","Gap Ringkas")]:
+                        _quad_pid[_display]=_quad_pid[_raw].map(_compact_quadrant_amount)
                     _quad_pid=_quad_pid.dropna(subset=["A/T %"])
                     _median_pid=float(_quad_pid["Kontribusi %"].median()) if not _quad_pid.empty else 0
-                    _scatter=alt.Chart(_quad_pid).mark_circle(size=100,opacity=.82,stroke="#FFFFFF",strokeWidth=1).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Kontribusi %:Q",title="Kontribusi Cabang (%)",scale=alt.Scale(domainMin=0)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#0F9B8E"),alt.value("#335A9F")),tooltip=["Principal ID",alt.Tooltip("Actual:Q",format=",.0f"),alt.Tooltip("Target:Q",format=",.0f"),alt.Tooltip("A/T %:Q",format=".1f"),alt.Tooltip("Kontribusi %:Q",format=".1f"),alt.Tooltip("Gap:Q",format=",.0f")])
+                    _scatter=alt.Chart(_quad_pid).mark_circle(size=100,opacity=.82,stroke="#FFFFFF",strokeWidth=1).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Kontribusi %:Q",title="Kontribusi Cabang (%)",scale=alt.Scale(domainMin=0)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#0F9B8E"),alt.value("#335A9F")),tooltip=[alt.Tooltip("Principal ID:N",title="Principal ID"),alt.Tooltip("Nama Principal:N",title="Nama Principal"),alt.Tooltip("Actual Ringkas:N",title="Actual"),alt.Tooltip("Target Ringkas:N",title="Target"),alt.Tooltip("A/T %:Q",format=".1f"),alt.Tooltip("Kontribusi %:Q",format=".1f"),alt.Tooltip("Gap Ringkas:N",title="Gap")])
                     _vx=alt.Chart(pd.DataFrame({"x":[100]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(x="x:Q")
                     _hy=alt.Chart(pd.DataFrame({"y":[_median_pid]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(y="y:Q")
                     _quad_chart=alt.layer(_scatter,_vx,_hy).properties(height=250,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
                     st.altair_chart(_quad_chart,width="stretch",key=f"performance_quadrant_{abs(hash(_perf_filter_signature))}")
+                    st.caption("Arahkan kursor ke titik untuk melihat Principal ID, nama principal, dan nominal Actual/Target/Gap dalam Rb atau Jt.")
                 else:
                     st.info("Kolom Principal ID tidak tersedia pada database aktif.")
             with _layout_cols[1]:
