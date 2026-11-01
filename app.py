@@ -5570,7 +5570,24 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
 
             _layout_cols=st.columns([1.05,.95],gap="medium")
             with _layout_cols[0]:
-                st.markdown("#### Kuadran Sales Person Title")
+                st.markdown("#### Kuadran Principal ID")
+                if principal_col:
+                    _quad_pid=month_df.groupby(principal_col,dropna=False).agg(Actual=("_perf_sales","sum"),Target=("_perf_target","sum")).reset_index().rename(columns={principal_col:"Principal ID"})
+                    _quad_pid["Principal ID"]=_quad_pid["Principal ID"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Tidak tercantum)").astype(str)
+                    _quad_pid["A/T %"]=_quad_pid["Actual"].div(_quad_pid["Target"].replace(0,float("nan")))*100
+                    _quad_pid["Kontribusi %"]=_quad_pid["Actual"].div(max(float(_quad_pid["Actual"].sum()),1))*100
+                    _quad_pid["Gap"]=_quad_pid["Actual"]-_quad_pid["Target"]
+                    _quad_pid=_quad_pid.dropna(subset=["A/T %"])
+                    _median_pid=float(_quad_pid["Kontribusi %"].median()) if not _quad_pid.empty else 0
+                    _scatter=alt.Chart(_quad_pid).mark_circle(size=100,opacity=.82,stroke="#FFFFFF",strokeWidth=1).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Kontribusi %:Q",title="Kontribusi Cabang (%)",scale=alt.Scale(domainMin=0)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#0F9B8E"),alt.value("#335A9F")),tooltip=["Principal ID",alt.Tooltip("Actual:Q",format=",.0f"),alt.Tooltip("Target:Q",format=",.0f"),alt.Tooltip("A/T %:Q",format=".1f"),alt.Tooltip("Kontribusi %:Q",format=".1f"),alt.Tooltip("Gap:Q",format=",.0f")])
+                    _vx=alt.Chart(pd.DataFrame({"x":[100]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(x="x:Q")
+                    _hy=alt.Chart(pd.DataFrame({"y":[_median_pid]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(y="y:Q")
+                    _quad_chart=alt.layer(_scatter,_vx,_hy).properties(height=250,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
+                    st.altair_chart(_quad_chart,width="stretch")
+                else:
+                    st.info("Kolom Principal ID tidak tersedia pada database aktif.")
+            with _layout_cols[1]:
+                st.markdown("#### Fokus Minggu Ini")
                 if sp_col:
                     _quad=month_df.groupby(sp_col,dropna=False).agg(Actual=("_perf_sales","sum"),Target=("_perf_target","sum")).reset_index().rename(columns={sp_col:"Sales Person"})
                     _quad["Sales Person"]=_quad["Sales Person"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Tidak tercantum)").astype(str)
@@ -5578,23 +5595,15 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     _quad["Kontribusi %"]=_quad["Actual"].div(max(float(_quad["Actual"].sum()),1))*100
                     _quad["Gap"]=_quad["Actual"]-_quad["Target"]
                     _quad=_quad.dropna(subset=["A/T %"])
-                    _median=float(_quad["Kontribusi %"].median()) if not _quad.empty else 0
-                    _scatter=alt.Chart(_quad).mark_circle(size=100,opacity=.82,stroke="#FFFFFF",strokeWidth=1).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Kontribusi %:Q",title="Kontribusi Sales Cabang (%)",scale=alt.Scale(domainMin=0)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#0F9B8E"),alt.value("#335A9F")),tooltip=["Sales Person",alt.Tooltip("Actual:Q",format=",.0f"),alt.Tooltip("Target:Q",format=",.0f"),alt.Tooltip("A/T %:Q",format=".1f"),alt.Tooltip("Kontribusi %:Q",format=".1f"),alt.Tooltip("Gap:Q",format=",.0f")])
-                    _vx=alt.Chart(pd.DataFrame({"x":[100]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(x="x:Q")
-                    _hy=alt.Chart(pd.DataFrame({"y":[_median]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(y="y:Q")
-                    _quad_chart=alt.layer(_scatter,_vx,_hy).properties(height=250,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
-                    st.altair_chart(_quad_chart,width="stretch")
-                else:
-                    st.info("Kolom Sales Person Title belum tersedia pada database aktif.")
-            with _layout_cols[1]:
-                st.markdown("#### Fokus Minggu Ini")
-                if sp_col and not _quad.empty:
-                    _leaders=_quad.sort_values("A/T %",ascending=False,na_position="last")
-                    _best=_leaders.sort_values("Actual",ascending=False).iloc[0]
-                    _weak=_quad.sort_values("Gap").iloc[0]
-                    st.markdown(f"<div style='display:flex;gap:10px;margin:4px 0 14px'><div style='flex:1;background:#E8F7F3;border:1px solid #B7E4D7;border-radius:10px;padding:12px;color:#174B43'><small>Kontributor terbesar</small><br><b>{html.escape(str(_best['Sales Person']))}</b><br>{_best['Actual']:,.0f} · {_best['Kontribusi %']:.1f}% kontribusi</div><div style='flex:1;background:#FFF1F1;border:1px solid #F5CACA;border-radius:10px;padding:12px;color:#7B2630'><small>Gap terbesar</small><br><b>{html.escape(str(_weak['Sales Person']))}</b><br>Gap {_weak['Gap']:,.0f} · A/T {(_weak['A/T %'] if pd.notna(_weak['A/T %']) else 0):.1f}%</div></div>",unsafe_allow_html=True)
-                    st.markdown("**Top 5 Sales Person Title · berdasarkan A/T**")
-                    st.dataframe(_leaders[["Sales Person","Actual","Target","A/T %"]].head(5).style.format({"Actual":"{:,.0f}","Target":"{:,.0f}","A/T %":lambda x:"—" if pd.isna(x) else f"{x:.1f}%"}),width="stretch",hide_index=True)
+                    if not _quad.empty:
+                        _leaders=_quad.sort_values("A/T %",ascending=False,na_position="last")
+                        _best=_leaders.sort_values("Actual",ascending=False).iloc[0]
+                        _weak=_quad.sort_values("Gap").iloc[0]
+                        st.markdown(f"<div style='display:flex;gap:10px;margin:4px 0 14px'><div style='flex:1;background:#E8F7F3;border:1px solid #B7E4D7;border-radius:10px;padding:12px;color:#174B43'><small>Kontributor terbesar</small><br><b>{html.escape(str(_best['Sales Person']))}</b><br>{_best['Actual']:,.0f} · {_best['Kontribusi %']:.1f}% kontribusi</div><div style='flex:1;background:#FFF1F1;border:1px solid #F5CACA;border-radius:10px;padding:12px;color:#7B2630'><small>Gap terbesar</small><br><b>{html.escape(str(_weak['Sales Person']))}</b><br>Gap {_weak['Gap']:,.0f} · A/T {(_weak['A/T %'] if pd.notna(_weak['A/T %']) else 0):.1f}%</div></div>",unsafe_allow_html=True)
+                        st.markdown("**Top 5 Sales Person Title · berdasarkan A/T**")
+                        st.dataframe(_leaders[["Sales Person","Actual","Target","A/T %"]].head(5).style.format({"Actual":"{:,.0f}","Target":"{:,.0f}","A/T %":lambda x:"—" if pd.isna(x) else f"{x:.1f}%"}),width="stretch",hide_index=True)
+                    else:
+                        st.caption("Belum ada Sales Person dengan target pada periode ini.")
                 else:
                     st.caption("Belum ada data sales person untuk ditampilkan.")
 
