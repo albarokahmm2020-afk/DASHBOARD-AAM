@@ -1907,11 +1907,18 @@ div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal']
 .scorecard:hover {{ transform:translateY(-1px) !important; box-shadow:0 6px 16px rgba(15,23,42,.09) !important; }}
 .stDataFrame,.stDataEditor {{ border-radius:9px !important; }}
 div[data-testid='stVegaLiteChart'] {{ border:1px solid #E2E8F0; border-radius:10px; padding:6px; background:#FFFFFF !important; }}
+@keyframes dashboard-kpi-enter {{ from {{ opacity:0; transform:translateY(9px); }} to {{ opacity:1; transform:translateY(0); }} }}
+@keyframes dashboard-filter-pulse {{ 0% {{ outline:0 solid rgba(32,178,170,0); }} 35% {{ outline:4px solid rgba(32,178,170,.20); }} 100% {{ outline:0 solid rgba(32,178,170,0); }} }}
+@keyframes dashboard-chart-enter {{ from {{ opacity:0; transform:translateY(7px); }} to {{ opacity:1; transform:translateY(0); }} }}
+.monitoring-sales-card,.scorecard,div[data-testid='stMetric'] {{ animation:dashboard-kpi-enter .48s cubic-bezier(.2,.75,.25,1) both; transition:transform .2s ease,box-shadow .2s ease; }}
+.monitoring-sales-card.motion-filter-updated,.scorecard.motion-filter-updated,div[data-testid='stMetric'].motion-filter-updated {{ animation:dashboard-filter-pulse .78s ease-out both; }}
+div[data-testid='stVegaLiteChart'] {{ animation:dashboard-chart-enter .5s cubic-bezier(.2,.75,.25,1) both; }}
+.monitoring-sales-card[style*="--motion-order"] {{ animation-delay:calc(var(--motion-order,0) * 65ms); }}
 @media(max-width:760px) {{
   div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] {{ flex-wrap:wrap !important; }}
   div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] label {{ flex:1 1 auto !important; }}
 }}
-@media(prefers-reduced-motion:reduce) {{ .monitoring-sales-card,.monitoring-sales-fot,.scorecard {{ transition:none !important; }} }}
+@media(prefers-reduced-motion:reduce) {{ .monitoring-sales-card,.monitoring-sales-fot,.scorecard,div[data-testid='stMetric'],div[data-testid='stVegaLiteChart'] {{ animation:none !important; transition:none !important; transform:none !important; }} }}
 </style>
 """,unsafe_allow_html=True)
 if branch_header_img:
@@ -5433,6 +5440,11 @@ elif main_section=="Performance Sales":
             default_month=int(settings.get("performance_filters",{}).get("month",max(months) if months else 1))
             selected_month=st.selectbox("Month",months,index=months.index(default_month) if default_month in months else max(0,len(months)-1),format_func=lambda m:MONTHS.get(int(m),str(m)),key="performance_month") if months else 1
         settings["performance_filters"]={"business_group":selected_bg,"year":int(selected_year),"month":int(selected_month),"salesperson":selected_sp}
+        _perf_filter_signature=(tuple(sorted(map(str,selected_bg))),int(selected_year),int(selected_month),tuple(sorted(map(str,selected_sp))))
+        _perf_previous_filter_signature=st.session_state.get("_performance_last_filter_signature")
+        _perf_filters_changed=_perf_previous_filter_signature is not None and _perf_previous_filter_signature!=_perf_filter_signature
+        st.session_state["_performance_last_filter_signature"]=_perf_filter_signature
+        _perf_motion_class=" motion-filter-updated" if _perf_filters_changed else ""
 
         # ── Scope — semua filter ikut (BG, SP, Year) ─────────────────────────
         # Target Value di database diisi per baris transaksi, di-sum langsung.
@@ -5576,7 +5588,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     display=f"{value:,.1f}%" if label=="A/T" and value is not None else ("—" if value is None else f"{value:,.0f}")
                     accent_class="monitoring-sales-card--orange" if index%2 else "monitoring-sales-card--teal"
                     negative_class=" monitoring-sales-card__value--negative" if label=="Deviasi" and value is not None and value<0 else ""
-                    st.markdown(f"<div class='monitoring-sales-card {accent_class}'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
+                    st.markdown(f"<div class='monitoring-sales-card {accent_class}{_perf_motion_class}' style='--motion-order:{index}'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
             st.markdown(f"##### Ringkasan Kumulatif YTD · Jan–{month_name} {int(selected_year)}")
             cum=st.columns(4,gap="small")
             cum_metrics=[("Actual Gross · YTD",y_actual),("Target · YTD",y_target),("A/T · YTD",y_ach),("Deviasi · YTD",y_dev)]
@@ -5584,7 +5596,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 with c:
                     display=f"{value:,.1f}%" if label.startswith("A/T") and value is not None else ("—" if value is None else f"{value:,.0f}")
                     negative_class=" monitoring-sales-card__value--negative" if label.startswith("Deviasi") and value is not None and value<0 else ""
-                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
+                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal{_perf_motion_class}'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
             m_principal=month_df.groupby(principal_col,dropna=False).agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum")).reset_index()
             m_principal=m_principal.rename(columns={principal_col:"Principal ID"})
             y_principal=ytd_df.groupby(principal_col,dropna=False).agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum")).reset_index().rename(columns={principal_col:"Principal ID"})
@@ -5624,7 +5636,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("A/T %:Q",title="A/T",format=".1f")])
             _at_chart=alt.layer(_at_rule,_at_line).resolve_scale(y="shared")
             _trend_chart=alt.layer(_bars_chart,_at_chart).resolve_scale(x="shared",y="independent").properties(height=340,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=11,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E8EDF3",gridDash=[3,4],titlePadding=7).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
-            st.altair_chart(_trend_chart,width="stretch")
+            st.altair_chart(_trend_chart,width="stretch",key=f"performance_trend_{abs(hash(_perf_filter_signature))}")
             st.caption("Batang menunjukkan Sales Value dan Target; garis menunjukkan A/T pada sumbu kanan. Garis putus-putus menandai target 100%.")
 
             _layout_cols=st.columns([1.05,.95],gap="medium")
@@ -5642,7 +5654,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     _vx=alt.Chart(pd.DataFrame({"x":[100]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(x="x:Q")
                     _hy=alt.Chart(pd.DataFrame({"y":[_median_pid]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(y="y:Q")
                     _quad_chart=alt.layer(_scatter,_vx,_hy).properties(height=250,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
-                    st.altair_chart(_quad_chart,width="stretch")
+                    st.altair_chart(_quad_chart,width="stretch",key=f"performance_quadrant_{abs(hash(_perf_filter_signature))}")
                 else:
                     st.info("Kolom Principal ID tidak tersedia pada database aktif.")
             with _layout_cols[1]:
@@ -5749,7 +5761,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                         y=alt.Y("Principal ID:N",sort="-x",title=None),
                         color=alt.Color("Arah:N",scale=alt.Scale(domain=["Di atas target","Di bawah target"],range=["#0F9B8E","#D95D67"]),legend=None),
                         tooltip=["Principal ID",alt.Tooltip("ACT Bulanan:Q",title="Actual",format=",.0f"),alt.Tooltip("TGT Bulanan:Q",title="Target",format=",.0f"),alt.Tooltip("DEV Bulanan:Q",title="Gap",format=",.0f")]).properties(height=max(180,min(300,26*len(_gap_frame))),width="container")
-                    st.altair_chart(_gap_chart.configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3"),width="stretch")
+                    st.altair_chart(_gap_chart.configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3"),width="stretch",key=f"performance_gap_{abs(hash(_perf_filter_signature))}")
                 else:
                     st.caption("Tidak ada gap principal pada periode terpilih.")
             with _bottom_cols[1]:
@@ -6000,7 +6012,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     disp_val = f"{val:,.1f}%" if lbl=="A/T" and val is not None else ("—" if val is None else f"Rp {val:,.0f}")
                     accent_class="monitoring-sales-card--orange" if index%2 else "monitoring-sales-card--teal"
                     negative_class=" monitoring-sales-card__value--negative" if lbl=="Deviasi" and val is not None and val<0 else ""
-                    st.markdown(f"<div class='monitoring-sales-card {accent_class}'><div class='monitoring-sales-card__label'>{lbl}</div><div class='monitoring-sales-card__value{negative_class}'>{disp_val}</div></div>",unsafe_allow_html=True)
+                    st.markdown(f"<div class='monitoring-sales-card {accent_class}{_perf_motion_class}' style='--motion-order:{index}'><div class='monitoring-sales-card__label'>{lbl}</div><div class='monitoring-sales-card__value{negative_class}'>{disp_val}</div></div>",unsafe_allow_html=True)
 
             # YTD cards — 4 kolom
             cum_tsb = st.columns(4,gap="small")
@@ -6011,7 +6023,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 with c_tsb:
                     disp_val = f"{val:,.1f}%" if lbl.startswith("A/T") and val is not None else ("—" if val is None else f"Rp {val:,.0f}")
                     negative_class=" monitoring-sales-card__value--negative" if lbl.startswith("Deviasi") and val is not None and val<0 else ""
-                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal'><div class='monitoring-sales-card__label'>{lbl}</div><div class='monitoring-sales-card__value{negative_class}'>{disp_val}</div></div>",unsafe_allow_html=True)
+                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal{_perf_motion_class}'><div class='monitoring-sales-card__label'>{lbl}</div><div class='monitoring-sales-card__value{negative_class}'>{disp_val}</div></div>",unsafe_allow_html=True)
 
             # ── AI Insight Toserba dengan susunan yang sama seperti Performance Sales ──
             st.markdown("#### 🧠 AI Insight · Strategi Capai Target Bulanan")
