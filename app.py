@@ -5569,27 +5569,22 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
         perf_view=st.radio("Sub menu Performance Sales",["Monitoring Sales","Toserba","Customer di Bawah Rata-rata","Detail Customer"],horizontal=True,key="performance_view")
         if perf_view=="Monitoring Sales":
             st.markdown(f"#### {month_name} {int(selected_year)}")
-            _month_days=pd.Timestamp(int(selected_year),int(selected_month),1).days_in_month
-            _now=pd.Timestamp.now()
-            _forecast=(m_actual/_now.day*_month_days) if (_now.year==int(selected_year) and _now.month==int(selected_month) and _now.day>0) else None
-            top=st.columns(5,gap="small")
-            monthly_metrics=[(f"Actual Gross · {month_name}",m_actual),(f"Target · {month_name}",m_target),("A/T",m_ach),("Deviasi",m_dev),("Forecast Akhir Bulan",_forecast)]
+            top=st.columns(4,gap="small")
+            monthly_metrics=[(f"Actual Gross · {month_name}",m_actual),(f"Target · {month_name}",m_target),("A/T",m_ach),("Deviasi",m_dev)]
             for index,(c,(label,value)) in enumerate(zip(top,monthly_metrics)):
                 with c:
                     display=f"{value:,.1f}%" if label=="A/T" and value is not None else ("—" if value is None else f"{value:,.0f}")
-                    if label=="Forecast Akhir Bulan" and value is not None:
-                        display=f"{value:,.0f}"
                     accent_class="monitoring-sales-card--orange" if index%2 else "monitoring-sales-card--teal"
                     negative_class=" monitoring-sales-card__value--negative" if label=="Deviasi" and value is not None and value<0 else ""
                     st.markdown(f"<div class='monitoring-sales-card {accent_class}'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
-            with st.expander(f"Ringkasan kumulatif YTD · Jan–{month_name} {int(selected_year)}",expanded=False):
-                cum=st.columns(4,gap="small")
-                cum_metrics=[("Actual Gross · YTD",y_actual),("Target · YTD",y_target),("A/T · YTD",y_ach),("Deviasi · YTD",y_dev)]
-                for c,(label,value) in zip(cum,cum_metrics):
-                    with c:
-                        display=f"{value:,.1f}%" if label.startswith("A/T") and value is not None else ("—" if value is None else f"{value:,.0f}")
-                        negative_class=" monitoring-sales-card__value--negative" if label.startswith("Deviasi") and value is not None and value<0 else ""
-                        st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
+            st.markdown(f"##### Ringkasan Kumulatif YTD · Jan–{month_name} {int(selected_year)}")
+            cum=st.columns(4,gap="small")
+            cum_metrics=[("Actual Gross · YTD",y_actual),("Target · YTD",y_target),("A/T · YTD",y_ach),("Deviasi · YTD",y_dev)]
+            for c,(label,value) in zip(cum,cum_metrics):
+                with c:
+                    display=f"{value:,.1f}%" if label.startswith("A/T") and value is not None else ("—" if value is None else f"{value:,.0f}")
+                    negative_class=" monitoring-sales-card__value--negative" if label.startswith("Deviasi") and value is not None and value<0 else ""
+                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
             m_principal=month_df.groupby(principal_col,dropna=False).agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum")).reset_index()
             m_principal=m_principal.rename(columns={principal_col:"Principal ID"})
             y_principal=ytd_df.groupby(principal_col,dropna=False).agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum")).reset_index().rename(columns={principal_col:"Principal ID"})
