@@ -4716,13 +4716,25 @@ elif main_section=="Report":
 
         # Compare customer sales for each POT with the preceding calendar month.
         _monthly_customer_col=col(df,"customer")
+        _monthly_product_col=col(df,"product")
+        _monthly_product_code_col=col(df,"product_code")
+        _monthly_item_changes=pd.DataFrame(columns=["POT","Relasi","Item","Bulan Sebelumnya","Bulan Dipilih","Perubahan"])
         _monthly_previous_period=pd.Period(year=int(monthly_year),month=int(monthly_month),freq="M")-1
         _monthly_relation_changes=pd.DataFrame(columns=["POT","Relasi","Bulan Sebelumnya","Bulan Dipilih","Perubahan","Perubahan (%)"])
-        _monthly_relation_summary={}
         if _monthly_principal_col and _monthly_customer_col:
+            _monthly_item_values=pd.Series("",index=df.index,dtype="string")
+            if _monthly_product_col:
+                _monthly_item_values=df[_monthly_product_col].astype("string").str.strip().fillna("")
+            if _monthly_product_code_col:
+                _monthly_item_codes=df[_monthly_product_code_col].astype("string").str.strip().fillna("")
+                _monthly_item_values=_monthly_item_values.where(_monthly_item_values.ne(""),_monthly_item_codes)
+                if _monthly_product_col:
+                    _monthly_has_both=_monthly_item_codes.ne("")&_monthly_item_values.ne("")&_monthly_item_codes.str.casefold().ne(_monthly_item_values.str.casefold())
+                    _monthly_item_values=_monthly_item_values.where(~_monthly_has_both,_monthly_item_codes+" · "+_monthly_item_values)
             _relation_sales=pd.DataFrame({
                 "POT":df[_monthly_principal_col].astype("string").str.strip(),
                 "Relasi":df[_monthly_customer_col].astype("string").str.strip(),
+                "Item":_monthly_item_values,
                 "Sales":pd.to_numeric(df[_monthly_sales_col],errors="coerce").fillna(0),
                 "Period":_monthly_dates.dt.to_period("M"),
                 "Bisnis":df[_monthly_bg_col].astype("string").str.strip(),
@@ -4732,27 +4744,15 @@ elif main_section=="Report":
                 _relation_sales=_relation_sales[_relation_sales["Bisnis"].isin(monthly_business_groups)]
             _relation_current=_relation_sales[_relation_sales["Period"].eq(pd.Period(year=int(monthly_year),month=int(monthly_month),freq="M"))].groupby(["POT","Relasi"],as_index=False)["Sales"].sum().rename(columns={"Sales":"Bulan Dipilih"})
             _relation_previous=_relation_sales[_relation_sales["Period"].eq(_monthly_previous_period)].groupby(["POT","Relasi"],as_index=False)["Sales"].sum().rename(columns={"Sales":"Bulan Sebelumnya"})
+            if _monthly_product_col or _monthly_product_code_col:
+                _item_current=_relation_sales[_relation_sales["Period"].eq(pd.Period(year=int(monthly_year),month=int(monthly_month),freq="M"))&_relation_sales["Item"].ne("")].groupby(["POT","Relasi","Item"],as_index=False)["Sales"].sum().rename(columns={"Sales":"Bulan Dipilih"})
+                _item_previous=_relation_sales[_relation_sales["Period"].eq(_monthly_previous_period)&_relation_sales["Item"].ne("")].groupby(["POT","Relasi","Item"],as_index=False)["Sales"].sum().rename(columns={"Sales":"Bulan Sebelumnya"})
+                _monthly_item_changes=_item_previous.merge(_item_current,on=["POT","Relasi","Item"],how="outer").fillna({"Bulan Sebelumnya":0,"Bulan Dipilih":0})
+                _monthly_item_changes["Perubahan"]=_monthly_item_changes["Bulan Dipilih"]-_monthly_item_changes["Bulan Sebelumnya"]
             _monthly_relation_changes=_relation_previous.merge(_relation_current,on=["POT","Relasi"],how="outer").fillna({"Bulan Sebelumnya":0,"Bulan Dipilih":0})
             _monthly_relation_changes["Perubahan"]=_monthly_relation_changes["Bulan Dipilih"]-_monthly_relation_changes["Bulan Sebelumnya"]
             _monthly_relation_changes["Perubahan (%)"]=_monthly_relation_changes["Perubahan"].div(_monthly_relation_changes["Bulan Sebelumnya"].replace(0,float("nan")))*100
             _monthly_relation_changes=_monthly_relation_changes[_monthly_relation_changes["Bulan Sebelumnya"].ne(0)|_monthly_relation_changes["Bulan Dipilih"].ne(0)].copy()
-            for _pot_name,_pot_relations in _monthly_relation_changes.groupby("POT"):
-                _rel_increase=_pot_relations[_pot_relations["Perubahan"].gt(0)].sort_values("Perubahan",ascending=False)
-                _rel_decline=_pot_relations[_pot_relations["Perubahan"].lt(0)].sort_values("Perubahan",ascending=True)
-                _rel_new=_pot_relations[_pot_relations["Bulan Sebelumnya"].eq(0)&_pot_relations["Bulan Dipilih"].gt(0)]
-                _rel_lost=_pot_relations[_pot_relations["Bulan Sebelumnya"].gt(0)&_pot_relations["Bulan Dipilih"].eq(0)]
-                _pot_current_sales=float(_pot_relations["Bulan Dipilih"].sum())
-                _pot_previous_sales=float(_pot_relations["Bulan Sebelumnya"].sum())
-                _pot_change=_pot_current_sales-_pot_previous_sales
-                _pot_change_pct=_pot_change/_pot_previous_sales*100 if _pot_previous_sales else None
-                _best_gain=_rel_increase.iloc[0] if not _rel_increase.empty else None
-                _largest_drop=_rel_decline.iloc[0] if not _rel_decline.empty else None
-                _monthly_relation_summary[str(_pot_name)]={
-                    "current":_pot_current_sales,"previous":_pot_previous_sales,"change":_pot_change,"change_pct":_pot_change_pct,
-                    "up_count":len(_rel_increase),"down_count":len(_rel_decline),"new_count":len(_rel_new),"lost_count":len(_rel_lost),
-                    "current_relation_count":int(_pot_relations["Bulan Dipilih"].gt(0).sum()),"previous_relation_count":int(_pot_relations["Bulan Sebelumnya"].gt(0).sum()),
-                    "best_gain":_best_gain,"largest_drop":_largest_drop,
-                }
 
         _previous_month_label=f"{MONTHS[_monthly_previous_period.month]} {_monthly_previous_period.year}"
         def _monthly_compact_number(value):
@@ -4789,16 +4789,40 @@ elif main_section=="Report":
         else:
             st.info("Kolom relasi/customer tidak ditemukan; analisa per relasi tidak dapat dihitung.")
 
+        def _monthly_relation_item_detail(pot_name,relation_name,direction,limit=2):
+            if not (_monthly_product_col or _monthly_product_code_col):
+                return "rincian item tidak tersedia di kolom database"
+            _item_rows=_monthly_item_changes[
+                _monthly_item_changes["POT"].astype(str).eq(str(pot_name))
+                &_monthly_item_changes["Relasi"].astype(str).eq(str(relation_name))
+            ]
+            if direction=="positive":
+                _item_rows=_item_rows[_item_rows["Perubahan"].gt(0)]
+            else:
+                _item_rows=_item_rows[_item_rows["Perubahan"].lt(0)]
+            _item_rows=_item_rows.sort_values("Perubahan",ascending=direction!="positive").head(limit)
+            if _item_rows.empty:
+                return "tidak ada perubahan item yang dapat dirinci"
+            _items=[]
+            for _,_item_row in _item_rows.iterrows():
+                _item_change=float(_item_row["Perubahan"])
+                _item_previous=float(_item_row["Bulan Sebelumnya"])
+                _item_current=float(_item_row["Bulan Dipilih"])
+                _item_direction="naik" if direction=="positive" else "turun"
+                _items.append(f"{_item_row['Item']} ({_monthly_compact_number(_item_previous)} → {_monthly_compact_number(_item_current)}, {_item_direction} {_monthly_compact_number(abs(_item_change))})")
+            _item_prefix="item pendorong" if direction=="positive" else "item dengan penurunan terbesar"
+            return _item_prefix+": "+"; ".join(_items)
+
         def _monthly_relation_factor_detail(pot_name,direction,limit=3):
             if _monthly_customer_col is None:
                 return "kolom customer tidak tersedia sehingga perubahan customer tidak dapat dirinci"
             _pot_rows=_monthly_relation_changes[_monthly_relation_changes["POT"].astype(str).eq(str(pot_name))]
             if direction=="positive":
                 _factor_rows=_pot_rows[_pot_rows["Perubahan"].gt(0)].sort_values("Perubahan",ascending=False)
-                _empty_text="belum ada customer dengan pertumbuhan dibanding bulan sebelumnya"
+                _empty_text="belum ada relasi yang tumbuh dibanding bulan sebelumnya"
             else:
-                _factor_rows=_pot_rows[_pot_rows["Perubahan"].lt(0)].sort_values("Perubahan",ascending=True)
-                _empty_text="belum ada customer yang mengalami penurunan dibanding bulan sebelumnya"
+                _factor_rows=_pot_rows[_pot_rows["Perubahan"].le(0)&_pot_rows["Bulan Sebelumnya"].gt(0)].sort_values("Perubahan",ascending=True)
+                _empty_text="tidak ada relasi yang turun atau stagnan dibanding bulan sebelumnya"
             if _factor_rows.empty:
                 return _empty_text
             _details=[]
@@ -4809,29 +4833,21 @@ elif main_section=="Report":
                 _change=float(_customer_row["Perubahan"])
                 if direction=="positive":
                     _status="customer baru" if _previous==0 else f"tumbuh {_customer_row['Perubahan (%)']:.1f}%"
-                    _details.append(f"{_customer} ({_monthly_compact_number(_previous)} → {_monthly_compact_number(_current)}, naik {_monthly_compact_number(_change)}; {_status})")
+                    _relationship=f"{_customer} ({_monthly_compact_number(_previous)} → {_monthly_compact_number(_current)}, naik {_monthly_compact_number(_change)}; {_status})"
                 else:
-                    _status="tidak repeat bulan ini" if _current==0 else f"turun {abs(_customer_row['Perubahan (%)']):.1f}%"
-                    _details.append(f"{_customer} ({_monthly_compact_number(_previous)} → {_monthly_compact_number(_current)}, turun {_monthly_compact_number(abs(_change))}; {_status})")
+                    _status="tidak repeat bulan ini" if _current==0 else "tidak tumbuh" if _change==0 else f"turun {abs(_customer_row['Perubahan (%)']):.1f}%"
+                    _relationship=f"{_customer} ({_monthly_compact_number(_previous)} → {_monthly_compact_number(_current)}, {_status})"
+                _item_detail=_monthly_relation_item_detail(pot_name,_customer,direction)
+                _details.append(_relationship+"; "+_item_detail)
             _remaining=len(_factor_rows)-len(_details)
-            _lead=f"{len(_factor_rows)} customer naik" if direction=="positive" else f"{len(_factor_rows)} customer turun"
-            _tail=f"; {_remaining} customer lain juga berubah" if _remaining>0 else ""
+            if direction=="positive":
+                _lead=f"{len(_factor_rows)} relasi tumbuh"
+            else:
+                _declined=int(_factor_rows["Perubahan"].lt(0).sum())
+                _stagnant=len(_factor_rows)-_declined
+                _lead=f"{_declined} relasi turun"+(f", {_stagnant} stagnan" if _stagnant else "")
+            _tail=f"; {max(0,_remaining)} relasi lain tidak dirinci" if _remaining>0 else ""
             return _lead+": "+"; ".join(_details)+_tail
-
-        def _monthly_relation_analysis(pot_name):
-            _pot_trend=_monthly_relation_summary.get(str(pot_name))
-            if _pot_trend is None:
-                return f"Belum ada transaksi relasi yang dapat dibandingkan dengan {_previous_month_label}."
-            _change_pct="—" if _pot_trend["change_pct"] is None else f"{_pot_trend['change_pct']:+.1f}%"
-            _signed_total_change=("+" if _pot_trend["change"]>0 else "")+_monthly_compact_number(_pot_trend["change"])
-            _trend_parts=[f"sales relasi {_previous_month_label} {_monthly_compact_number(_pot_trend['previous'])} menjadi {_monthly_compact_number(_pot_trend['current'])} ({_signed_total_change}; {_change_pct})",f"jumlah relasi aktif {_pot_trend['previous_relation_count']} menjadi {_pot_trend['current_relation_count']}",f"{_pot_trend['up_count']} relasi naik",f"{_pot_trend['down_count']} relasi turun",f"{_pot_trend['new_count']} relasi baru",f"{_pot_trend['lost_count']} relasi tidak repeat"]
-            if _pot_trend["best_gain"] is not None:
-                _g=_pot_trend["best_gain"]
-                _trend_parts.append(f"kenaikan terbesar {_g['Relasi']} ({_monthly_compact_number(_g['Perubahan'])}; sales bulan ini {_monthly_compact_number(_g['Bulan Dipilih'])})")
-            if _pot_trend["largest_drop"] is not None:
-                _d=_pot_trend["largest_drop"]
-                _trend_parts.append(f"penurunan terbesar {_d['Relasi']} ({_monthly_compact_number(_d['Bulan Sebelumnya'])} menjadi {_monthly_compact_number(_d['Bulan Dipilih'])}; perubahan {_monthly_compact_number(_d['Perubahan'])})")
-            return "; ".join(_trend_parts)+"."
 
         # Trend total sales per Principal: selected month vs preceding calendar
         # month and average of earlier months in the selected year.
@@ -4890,11 +4906,11 @@ elif main_section=="Report":
         _support_input=_monthly_on_target[["POT","A/T","Kontribusi Gross (%)"]].copy() if not _monthly_on_target.empty else pd.DataFrame(columns=["POT","A/T","Kontribusi Gross (%)"])
         _support_input["Faktor pendukung / analisa"]= [""]*len(_support_input)
         _support_input["Analisa tren Principal"]=_support_input["POT"].map(_monthly_principal_analysis) if not _support_input.empty else pd.Series(dtype="string")
-        _support_input["Analisa perubahan relasi"]=_support_input["POT"].map(_monthly_relation_analysis) if not _support_input.empty else pd.Series(dtype="string")
+        _support_input["Analisa perubahan relasi"]=_support_input["POT"].map(lambda _pot:_monthly_relation_factor_detail(_pot,"positive")) if not _support_input.empty else pd.Series(dtype="string")
         _barrier_input=_monthly_below_target[["POT","ACT","TGT","A/T","Dev"]].copy() if not _monthly_below_target.empty else pd.DataFrame(columns=["POT","ACT","TGT","A/T","Dev"])
         _barrier_input["Faktor penghambat / analisa"]= [""]*len(_barrier_input)
         _barrier_input["Analisa tren Principal"]=_barrier_input["POT"].map(_monthly_principal_analysis) if not _barrier_input.empty else pd.Series(dtype="string")
-        _barrier_input["Analisa perubahan relasi"]=_barrier_input["POT"].map(_monthly_relation_analysis) if not _barrier_input.empty else pd.Series(dtype="string")
+        _barrier_input["Analisa perubahan relasi"]=_barrier_input["POT"].map(lambda _pot:_monthly_relation_factor_detail(_pot,"negative")) if not _barrier_input.empty else pd.Series(dtype="string")
         st.markdown("##### Faktor Pendukung · POT on target")
         if not _support_input.empty:
             _support_input=_monthly_factor_editor_table(_support_input,"Faktor pendukung / analisa",f"monthly_support_note_{_monthly_report_key}")
@@ -4943,8 +4959,8 @@ elif main_section=="Report":
                     _pot_contrib=float(_support_row["Kontribusi Gross (%)"]) if pd.notna(_support_row["Kontribusi Gross (%)"]) else 0
                     _pot_note_value=_support_row.get("Faktor pendukung / analisa","")
                     _pot_note="" if pd.isna(_pot_note_value) else str(_pot_note_value).strip()
-                    _auto_analysis=f"Pencapaian {_pot_at:.0f}%, kontribusi gross {_pot_contrib:.1f}% dari total bisnis. Faktor positif customer: {_monthly_relation_factor_detail(_pot_name,'positive')}. "
-                    _monthly_lines.append(f"- {_pot_name} ({_pot_at:.0f}%, kontribusi {_pot_contrib:.1f}%). "+(f"Catatan: {_pot_note}. " if _pot_note else "")+_auto_analysis+f"Tren Principal: {_monthly_principal_analysis(_pot_name)} Analisa relasi: {_monthly_relation_analysis(_pot_name)}")
+                    _auto_analysis=f"Pencapaian {_pot_at:.0f}%, kontribusi gross {_pot_contrib:.1f}% dari total bisnis. Relasi pendukung dan item pendorong: {_monthly_relation_factor_detail(_pot_name,'positive')}. "
+                    _monthly_lines.append(f"- {_pot_name} ({_pot_at:.0f}%, kontribusi {_pot_contrib:.1f}%). "+(f"Catatan: {_pot_note}. " if _pot_note else "")+_auto_analysis)
             else:
                 _monthly_lines.append("- Tidak ada POT yang mencapai target bulan ini.")
             _monthly_lines.extend(["", "*FAKTOR PENGHAMBAT :*"])
@@ -4955,8 +4971,8 @@ elif main_section=="Report":
                     _pot_dev=float(_barrier_row["Dev"]) if pd.notna(_barrier_row["Dev"]) else 0
                     _pot_note_value=_barrier_row.get("Faktor penghambat / analisa","")
                     _pot_note="" if pd.isna(_pot_note_value) else str(_pot_note_value).strip()
-                    _auto_analysis=f"Pencapaian {_pot_at:.0f}% dengan deviasi {_monthly_compact_number(_pot_dev)}; actual masih di bawah target. Faktor penghambat customer: {_monthly_relation_factor_detail(_pot_name,'negative')}. "
-                    _monthly_lines.append(f"- {_pot_name} ({_pot_at:.0f}%, deviasi {_monthly_compact_number(_pot_dev)}). "+(f"Catatan: {_pot_note}. " if _pot_note else "")+_auto_analysis+f"Tren Principal: {_monthly_principal_analysis(_pot_name)} Analisa relasi: {_monthly_relation_analysis(_pot_name)}")
+                    _auto_analysis=f"Pencapaian {_pot_at:.0f}% dengan deviasi {_monthly_compact_number(_pot_dev)}; actual masih di bawah target. Relasi tanpa growth dan item penyebab penurunan: {_monthly_relation_factor_detail(_pot_name,'negative')}. "
+                    _monthly_lines.append(f"- {_pot_name} ({_pot_at:.0f}%, deviasi {_monthly_compact_number(_pot_dev)}). "+(f"Catatan: {_pot_note}. " if _pot_note else "")+_auto_analysis)
             else:
                 _monthly_lines.append("- Tidak ada POT di bawah target bulan ini.")
             _monthly_lines.extend(["", "Terimakasih"])
