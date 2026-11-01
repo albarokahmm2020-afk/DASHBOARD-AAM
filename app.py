@@ -5555,18 +5555,19 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 xOffset=alt.XOffset("Jenis:N"),y=alt.Y("Nilai:Q",title="Sales Value Gross / Target",scale=alt.Scale(domainMin=0),axis=alt.Axis(format="~s",titlePadding=10)),
                 tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("Jenis:N",title="Metrik"),alt.Tooltip("Nilai:Q",title="Nominal",format=",.0f")],
                 color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#335A9F","#AAB8CC"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)))
-            _bars_chart=bars.properties(height=265,width="container")
+            _bars_chart=bars.properties(width="container")
             _at_data=trend.dropna(subset=["A/T %"])
             _at_max=float(_at_data["A/T %"].max()) if not _at_data.empty else 120
             _at_axis=max(120,math.ceil(_at_max/20)*20)
-            _at_rule=alt.Chart(pd.DataFrame({"Target": [100]})).mark_rule(color="#E69B24",strokeDash=[5,4],strokeWidth=2).encode(y=alt.Y("Target:Q"))
+            _at_rule=alt.Chart(pd.DataFrame({"A/T %": [100]})).mark_rule(color="#E69B24",strokeDash=[5,4],strokeWidth=2).encode(y=alt.Y("A/T %:Q",axis=None))
             _at_line=alt.Chart(_at_data).mark_line(color="#0F9B8E",strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=72)).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist(),axis=alt.Axis(title=None,labelAngle=0,labelPadding=5)),
-                y=alt.Y("A/T %:Q",title="Pencapaian A/T",scale=alt.Scale(domain=[0,_at_axis]),axis=alt.Axis(format=".0f",labelExpr="datum.value + '%'",tickCount=4)),
+                y=alt.Y("A/T %:Q",title="Pencapaian A/T",scale=alt.Scale(domain=[0,_at_axis]),axis=alt.Axis(format=".0f",labelExpr="datum.value + '%'",orient="right",tickCount=5,titlePadding=10)),
                 tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("A/T %:Q",title="A/T",format=".1f")])
-            _at_chart=alt.layer(_at_rule,_at_line).properties(height=105,width="container")
-            _trend_chart=alt.vconcat(_bars_chart,_at_chart,spacing=0,padding={"left":10,"right":8,"top":6,"bottom":0}).resolve_scale(x="shared").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=11,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E8EDF3",gridDash=[3,4],titlePadding=7).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
+            _at_chart=alt.layer(_at_rule,_at_line).resolve_scale(y="shared")
+            _trend_chart=alt.layer(_bars_chart,_at_chart).resolve_scale(x="shared",y="independent").properties(height=340,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=11,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E8EDF3",gridDash=[3,4],titlePadding=7).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
             st.altair_chart(_trend_chart,width="stretch")
+            st.caption("Batang menunjukkan Sales Value dan Target; garis menunjukkan A/T pada sumbu kanan. Garis putus-putus menandai target 100%.")
 
             _layout_cols=st.columns([1.05,.95],gap="medium")
             with _layout_cols[0]:
