@@ -5592,7 +5592,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
             st.markdown(f"##### Ringkasan Kumulatif YTD · Jan–{month_name} {int(selected_year)}")
             cum=st.columns(4,gap="small")
             cum_metrics=[("Actual Gross · YTD",y_actual),("Target · YTD",y_target),("A/T · YTD",y_ach),("Deviasi · YTD",y_dev)]
-            for c,(label,value) in zip(cum,cum_metrics):
+            for index,(c,(label,value)) in enumerate(zip(cum,cum_metrics)):
                 with c:
                     display=f"{value:,.1f}%" if label.startswith("A/T") and value is not None else ("—" if value is None else f"{value:,.0f}")
                     negative_class=" monitoring-sales-card__value--negative" if label.startswith("Deviasi") and value is not None and value<0 else ""
@@ -6016,10 +6016,10 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
 
             # YTD cards — 4 kolom
             cum_tsb = st.columns(4,gap="small")
-            for c_tsb,(lbl,val) in zip(cum_tsb,[
+            for index,(c_tsb,(lbl,val)) in enumerate(zip(cum_tsb,[
                 ("Actual Gross · YTD",tsb_act_y),("Target · YTD",tsb_tgt_y),
                 ("A/T · YTD",tsb_ach_y),("Deviasi · YTD",tsb_dev_y),
-            ]):
+            ])):
                 with c_tsb:
                     disp_val = f"{val:,.1f}%" if lbl.startswith("A/T") and val is not None else ("—" if val is None else f"Rp {val:,.0f}")
                     negative_class=" monitoring-sales-card__value--negative" if lbl.startswith("Deviasi") and val is not None and val<0 else ""
