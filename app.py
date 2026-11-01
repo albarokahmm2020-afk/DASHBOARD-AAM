@@ -7030,6 +7030,53 @@ elif page=="Sasaran Program":
     if not visit_titles:
         st.info("Pilih Sales Person Title terlebih dahulu untuk menampilkan sasaran dan rencana kunjungannya.")
         st.stop()
+    if programs:
+        st.markdown("#### Sasaran nominal Program Push per Sales Person Title")
+        st.caption("Target nominal Total Sales mengikuti filter tiap program pada bulan aktif. Angka ditampilkan dalam Rp ribuan (Rb).")
+        _target_program_columns={prog:PROGRAM_NUMBERS.get(prog,program_label(prog)) for prog in programs}
+        _nominal_target_by_title={}
+        for _target_program in programs:
+            _target_selection=apply_active_program_config(_target_program,{
+                "year":[],"month":[],"principal_name":[],"principal":[],
+                "channel_group":[],"business_group":[],"product_code":[],"product":[],
+                "metric":"Total Sales",
+            })
+            # The table is explicitly nominal even if this program's Summary
+            # card is configured to count buying relationships (RB).
+            _target_selection["metric"]="Total Sales"
+            _target_scope=filtered_data(_target_selection)
+            _title_targets=title_performance(_target_scope,_target_program,_target_selection)
+            if _title_targets.empty:
+                continue
+            _title_targets=_title_targets[_title_targets["Sales Person Title"].astype(str).str.strip().isin(visit_titles)]
+            _target_column=_target_program_columns[_target_program]
+            for _,_target_row in _title_targets.iterrows():
+                _target_title=str(_target_row["Sales Person Title"]).strip()
+                if not _target_title or _target_title.casefold() in {"nan","none","<na>"}:
+                    continue
+                _nominal_target=pd.to_numeric(pd.Series([_target_row.get("Target")]),errors="coerce").iloc[0]
+                _nominal_target_by_title.setdefault(_target_title,{})[_target_column]=(float(_nominal_target)/1000 if pd.notna(_nominal_target) and float(_nominal_target)>0 else None)
+        if _nominal_target_by_title:
+            _target_table_rows=[]
+            for _target_title,_program_targets in _nominal_target_by_title.items():
+                _record={"Sales Person Title":_target_title}
+                _target_values=[]
+                for _program_column in _target_program_columns.values():
+                    _value=_program_targets.get(_program_column)
+                    _record[_program_column]=_value
+                    if _value is not None:
+                        _target_values.append(_value)
+                _record["Total Target"]=(sum(_target_values) if _target_values else None)
+                _target_table_rows.append(_record)
+            _nominal_target_df=pd.DataFrame(_target_table_rows)
+            _nominal_target_df=_nominal_target_df.sort_values("Total Target",ascending=False,na_position="last").reset_index(drop=True)
+            _target_formatters={column:(lambda value:"—" if pd.isna(value) else f"{value:,.0f} Rb".replace(",","."))
+                                for column in list(_target_program_columns.values())+["Total Target"]}
+            _nominal_target_styled=_nominal_target_df.style.format(_target_formatters,na_rep="—")
+            st.dataframe(_nominal_target_styled,width="stretch",hide_index=True)
+            st.caption(" · ".join(f"{_target_program_columns[prog]}: {program_label(prog)}" for prog in programs))
+        else:
+            st.info("Target nominal per Sales Person Title belum tersedia. Atur target Total Sales per program melalui Konfigurasi Program.")
     st.caption("Atur basis potensi per program. Tahunan mencari pembeli tahun sebelumnya yang belum membeli tahun sasaran; bulanan mencari pembeli pada bulan tepat sebelumnya yang belum membeli di bulan sasaran.")
     st.caption("Kriteria populasi khusus: RPB LUMA mengambil relasi yang pernah bertransaksi pada Principal ID MCS; RPB NOZA mengambil 50% relasi unik yang belum transaksi dari Channel Group Pharmacy, diprioritaskan berdasarkan nilai transaksi historis.")
     cadence_settings=settings.setdefault("visit_cadence",{})
