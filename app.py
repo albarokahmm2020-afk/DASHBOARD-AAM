@@ -5504,11 +5504,16 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
         perf_view=st.radio("Sub menu Performance Sales",["Monitoring Sales","Toserba","Customer di Bawah Rata-rata","Detail Customer"],horizontal=True,key="performance_view")
         if perf_view=="Monitoring Sales":
             st.markdown(f"#### {month_name} {int(selected_year)}")
-            top=st.columns(4,gap="small")
-            monthly_metrics=[(f"Actual Gross · {month_name}",m_actual),(f"Target · {month_name}",m_target),("A/T",m_ach),("Deviasi",m_dev)]
+            _month_days=pd.Timestamp(int(selected_year),int(selected_month),1).days_in_month
+            _now=pd.Timestamp.now()
+            _forecast=(m_actual/_now.day*_month_days) if (_now.year==int(selected_year) and _now.month==int(selected_month) and _now.day>0) else None
+            top=st.columns(5,gap="small")
+            monthly_metrics=[(f"Actual Gross · {month_name}",m_actual),(f"Target · {month_name}",m_target),("A/T",m_ach),("Deviasi",m_dev),("Forecast Akhir Bulan",_forecast)]
             for index,(c,(label,value)) in enumerate(zip(top,monthly_metrics)):
                 with c:
                     display=f"{value:,.1f}%" if label=="A/T" and value is not None else ("—" if value is None else f"{value:,.0f}")
+                    if label=="Forecast Akhir Bulan" and value is not None:
+                        display=f"{value:,.0f}"
                     accent_class="monitoring-sales-card--orange" if index%2 else "monitoring-sales-card--teal"
                     negative_class=" monitoring-sales-card__value--negative" if label=="Deviasi" and value is not None and value<0 else ""
                     st.markdown(f"<div class='monitoring-sales-card {accent_class}'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
@@ -5539,42 +5544,57 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
             trend["Month"]=trend["_perf_month"].map(lambda m:MONTHS.get(int(m),str(m)))
             trend["A/T %"]=trend["Sales"].div(trend["Target"].replace(0,float("nan")))*100
             fot=int(((trend["Target"]>0)&(trend["Sales"]>=trend["Target"])).sum())
-            sales_visual_cols=st.columns([1.25,.85],gap="medium")
-            with sales_visual_cols[0]:
-                chart_header, fot_box=st.columns([5,1])
-                with chart_header: st.markdown("#### Tren Penjualan Cabang · Actual vs Target")
-                with fot_box:
-                    st.markdown(f"<div class='monitoring-sales-fot'>FOT {int(selected_year)}<br><strong>{fot}×</strong></div>",unsafe_allow_html=True)
-            at_max=float(trend["A/T %"].dropna().max()) if trend["A/T %"].notna().any() else 150
-            at_axis_max=max(150,math.ceil(at_max/25)*25)
-            bars=alt.Chart(trend).transform_fold(["Sales","Target"],as_=["Jenis","Nilai"]).mark_bar(size=25,opacity=.9).encode(
+            chart_header, fot_box=st.columns([5,1])
+            with chart_header: st.markdown("#### Tren Penjualan Cabang · Actual vs Target")
+            with fot_box:
+                st.markdown(f"<div class='monitoring-sales-fot'>FOT {int(selected_year)}<br><strong>{fot}×</strong></div>",unsafe_allow_html=True)
+            bars=alt.Chart(trend).transform_fold(["Sales","Target"],as_=["Jenis","Nilai"]).mark_bar(size=25,opacity=.92).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist(),axis=alt.Axis(title="BULAN",labelAngle=-30,labelPadding=7)),
                 xOffset=alt.XOffset("Jenis:N"),y=alt.Y("Nilai:Q",title="Sales Value Gross / Target",scale=alt.Scale(domainMin=0),axis=alt.Axis(format="~s",titlePadding=10)),
                 tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("Jenis:N",title="Metrik"),alt.Tooltip("Nilai:Q",title="Nominal",format=",.0f")],
-                color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#0F766E","#64748B"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)))
-            line=alt.Chart(trend).mark_line(color=UI_ACCENT,strokeDash=[7,5],strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=58)).encode(
-                x=alt.X("Month:N",sort=trend["Month"].tolist()),y=alt.Y("A/T %:Q",title="A/T (%)",scale=alt.Scale(domain=[0,at_axis_max]),axis=alt.Axis(orient="right",format=".0f",labelExpr="datum.value + '%'",grid=False,titlePadding=10)),
-                tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("A/T %:Q",title="Pencapaian",format=".1f")],
-            )
-            combo=alt.layer(bars,line).resolve_scale(y="independent").properties(height=350,padding={"left":10,"right":8,"top":8,"bottom":2})
-            combo=combo.configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=12,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E0E6ED",gridDash=[3,4],titlePadding=8).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
-            with sales_visual_cols[0]:
-                st.altair_chart(combo,width="stretch")
-            with sales_visual_cols[1]:
-                st.markdown("#### Monitoring Sales")
-                st.caption(f"Pencapaian per Sales Person · {month_name} {int(selected_year)}")
+                color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#335A9F","#AAB8CC"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)))
+            _bars_chart=bars.properties(height=265,padding={"left":10,"right":8,"top":6,"bottom":0})
+            _at_data=trend.dropna(subset=["A/T %"])
+            _at_max=float(_at_data["A/T %"].max()) if not _at_data.empty else 120
+            _at_axis=max(120,math.ceil(_at_max/20)*20)
+            _at_rule=alt.Chart(pd.DataFrame({"Target": [100]})).mark_rule(color="#E69B24",strokeDash=[5,4],strokeWidth=2).encode(y=alt.Y("Target:Q"))
+            _at_line=alt.Chart(_at_data).mark_line(color="#0F9B8E",strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=72)).encode(
+                x=alt.X("Month:N",sort=trend["Month"].tolist(),axis=alt.Axis(title=None,labelAngle=0,labelPadding=5)),
+                y=alt.Y("A/T %:Q",title="Pencapaian A/T",scale=alt.Scale(domain=[0,_at_axis]),axis=alt.Axis(format=".0f",labelExpr="datum.value + '%'",tickCount=4)),
+                tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("A/T %:Q",title="A/T",format=".1f")])
+            _at_chart=alt.layer(_at_rule,_at_line).properties(height=105,padding={"left":10,"right":8,"top":0,"bottom":0})
+            _trend_chart=alt.vconcat(_bars_chart,_at_chart,spacing=0).resolve_scale(x="shared").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=11,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E8EDF3",gridDash=[3,4],titlePadding=7).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
+            st.altair_chart(_trend_chart,width="stretch")
+
+            _layout_cols=st.columns([1.05,.95],gap="medium")
+            with _layout_cols[0]:
+                st.markdown("#### Kuadran Sales Person Title")
                 if sp_col:
-                    _sp_monitor=month_df.groupby(sp_col,dropna=False).agg(Actual=("_perf_sales","sum"),Target=("_perf_target","sum")).reset_index().rename(columns={sp_col:"Sales Person"})
-                    _sp_monitor["Sales Person"]=_sp_monitor["Sales Person"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Tidak tercantum)").astype(str)
-                    _sp_monitor["Pencapaian"]=_sp_monitor["Actual"].div(_sp_monitor["Target"].replace(0,float("nan")))*100
-                    _sp_monitor["Status"]=_sp_monitor["Pencapaian"].map(lambda value:"Tercapai" if pd.notna(value) and value>=100 else "Perlu perhatian")
-                    _sp_monitor=_sp_monitor.sort_values(["Pencapaian","Actual"],ascending=[False,False],na_position="last").reset_index(drop=True)
-                    _sp_monitor_view=_sp_monitor[["Sales Person","Actual","Target","Pencapaian","Status"]]
-                    _sp_monitor_styled=_sp_monitor_view.style.format({"Actual":"{:,.0f}","Target":"{:,.0f}","Pencapaian":lambda value:"—" if pd.isna(value) else f"{value:,.1f}%"})
-                    _sp_monitor_styled=_sp_monitor_styled.map(lambda value:"background-color:#DCFCE7;color:#166534;font-weight:750" if pd.notna(value) and value>=100 else "background-color:#FEF3C7;color:#92400E;font-weight:700" if pd.notna(value) else "color:#64748B",subset=["Pencapaian"])
-                    st.dataframe(_sp_monitor_styled,width="stretch",hide_index=True,height=min(440,max(170,38+len(_sp_monitor_view)*35)))
+                    _quad=month_df.groupby(sp_col,dropna=False).agg(Actual=("_perf_sales","sum"),Target=("_perf_target","sum")).reset_index().rename(columns={sp_col:"Sales Person"})
+                    _quad["Sales Person"]=_quad["Sales Person"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Tidak tercantum)").astype(str)
+                    _quad["A/T %"]=_quad["Actual"].div(_quad["Target"].replace(0,float("nan")))*100
+                    _quad["Kontribusi %"]=_quad["Actual"].div(max(float(_quad["Actual"].sum()),1))*100
+                    _quad["Gap"]=_quad["Actual"]-_quad["Target"]
+                    _quad=_quad.dropna(subset=["A/T %"])
+                    _median=float(_quad["Kontribusi %"].median()) if not _quad.empty else 0
+                    _scatter=alt.Chart(_quad).mark_circle(size=100,opacity=.82,stroke="#FFFFFF",strokeWidth=1).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Kontribusi %:Q",title="Kontribusi Sales Cabang (%)",scale=alt.Scale(domainMin=0)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#0F9B8E"),alt.value("#335A9F")),tooltip=["Sales Person",alt.Tooltip("Actual:Q",format=",.0f"),alt.Tooltip("Target:Q",format=",.0f"),alt.Tooltip("A/T %:Q",format=".1f"),alt.Tooltip("Kontribusi %:Q",format=".1f"),alt.Tooltip("Gap:Q",format=",.0f")])
+                    _vx=alt.Chart(pd.DataFrame({"x":[100]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(x="x:Q")
+                    _hy=alt.Chart(pd.DataFrame({"y":[_median]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(y="y:Q")
+                    _quad_chart=alt.layer(_scatter,_vx,_hy).properties(height=250).configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
+                    st.altair_chart(_quad_chart,width="stretch")
                 else:
                     st.info("Kolom Sales Person Title belum tersedia pada database aktif.")
+            with _layout_cols[1]:
+                st.markdown("#### Fokus Minggu Ini")
+                if sp_col and not _quad.empty:
+                    _leaders=_quad.sort_values("A/T %",ascending=False,na_position="last")
+                    _best=_leaders.sort_values("Actual",ascending=False).iloc[0]
+                    _weak=_quad.sort_values("Gap").iloc[0]
+                    st.markdown(f"<div style='display:flex;gap:10px;margin:4px 0 14px'><div style='flex:1;background:#E8F7F3;border:1px solid #B7E4D7;border-radius:10px;padding:12px;color:#174B43'><small>Kontributor terbesar</small><br><b>{html.escape(str(_best['Sales Person']))}</b><br>{_best['Actual']:,.0f} · {_best['Kontribusi %']:.1f}% kontribusi</div><div style='flex:1;background:#FFF1F1;border:1px solid #F5CACA;border-radius:10px;padding:12px;color:#7B2630'><small>Gap terbesar</small><br><b>{html.escape(str(_weak['Sales Person']))}</b><br>Gap {_weak['Gap']:,.0f} · A/T {(_weak['A/T %'] if pd.notna(_weak['A/T %']) else 0):.1f}%</div></div>",unsafe_allow_html=True)
+                    st.markdown("**Top 5 Sales Person Title · berdasarkan A/T**")
+                    st.dataframe(_leaders[["Sales Person","Actual","Target","A/T %"]].head(5).style.format({"Actual":"{:,.0f}","Target":"{:,.0f}","A/T %":lambda x:"—" if pd.isna(x) else f"{x:.1f}%"}),width="stretch",hide_index=True)
+                else:
+                    st.caption("Belum ada data sales person untuk ditampilkan.")
 
             # ═══════════════════════════════════════════════════════════════
             # AI INSIGHT — Strategi Capai Target Bulanan
@@ -5646,15 +5666,35 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 status_icon="🔴"; status_label="KRITIS — INTERVENSI SEGERA"
                 headline=f"Pencapaian hanya {_ach_fmt:,.1f}% dengan {days_left} hari tersisa. Gap **{gap:,.0f}** sangat besar — perlu intervensi langsung dari AAM dan redistribusi sumber daya segera."
 
-            # Render insight card
-            insight_bg={"✅":"#F0FDF4","🟡":"#FFFBEB","🟠":"#FFF7ED","🔴":"#FEF2F2"}[status_icon]
-            insight_border={"✅":"#15803D","🟡":"#A16207","🟠":"#C2410C","🔴":"#B91C1C"}[status_icon]
-            st.markdown(f"""
-<div style='background:{insight_bg};border-left:5px solid {insight_border};border-radius:10px;padding:18px 22px;margin-bottom:12px'>
-<div style='color:{insight_border};font-weight:900;font-size:.85rem;letter-spacing:.08em'>{status_icon} {status_label}</div>
-<div style='color:#1E293B;font-size:1.05rem;font-weight:600;margin-top:6px;line-height:1.5'>{headline}</div>
+            # Ringkasan kontribusi gap dan insight berdampingan
+            _bottom_cols=st.columns([1.05,.95],gap="medium")
+            with _bottom_cols[0]:
+                st.markdown("#### Kontribusi Gap per Principal")
+                _gap_frame=principal_table[principal_table["DEV Bulanan"].ne(0)].copy()
+                _gap_frame=_gap_frame.sort_values("DEV Bulanan",key=lambda s:s.abs(),ascending=False).head(10).sort_values("DEV Bulanan")
+                if not _gap_frame.empty:
+                    _gap_frame["Arah"]=_gap_frame["DEV Bulanan"].map(lambda x:"Di atas target" if x>=0 else "Di bawah target")
+                    _gap_chart=alt.Chart(_gap_frame).mark_bar(cornerRadiusEnd=3).encode(
+                        x=alt.X("DEV Bulanan:Q",title="Gap terhadap target",axis=alt.Axis(format="~s")),
+                        y=alt.Y("Principal ID:N",sort="-x",title=None),
+                        color=alt.Color("Arah:N",scale=alt.Scale(domain=["Di atas target","Di bawah target"],range=["#0F9B8E","#D95D67"]),legend=None),
+                        tooltip=["Principal ID",alt.Tooltip("ACT Bulanan:Q",title="Actual",format=",.0f"),alt.Tooltip("TGT Bulanan:Q",title="Target",format=",.0f"),alt.Tooltip("DEV Bulanan:Q",title="Gap",format=",.0f")]).properties(height=max(180,min(300,26*len(_gap_frame))))
+                    st.altair_chart(_gap_chart.configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3"),width="stretch")
+                else:
+                    st.caption("Tidak ada gap principal pada periode terpilih.")
+            with _bottom_cols[1]:
+                st.markdown("#### Insight & Tindakan")
+                # Render insight card
+                insight_bg={"✅":"#F0FDF4","🟡":"#FFFBEB","🟠":"#FFF7ED","🔴":"#FEF2F2"}[status_icon]
+                insight_border={"✅":"#15803D","🟡":"#A16207","🟠":"#C2410C","🔴":"#B91C1C"}[status_icon]
+                st.markdown(f"""
+<div style='background:{insight_bg};border:1px solid #E2E8F0;border-left:5px solid {insight_border};border-radius:10px;padding:16px 18px;margin:0 0 12px'>
+<div style='color:{insight_border};font-weight:900;font-size:.85rem;letter-spacing:.04em'>{status_icon} {status_label}</div>
+<div style='color:#1E293B;font-size:1rem;font-weight:600;margin-top:6px;line-height:1.5'>{headline}</div>
 </div>""",unsafe_allow_html=True)
+                st.markdown(f"**A/T cabang {(_ach_fmt):,.1f}%** · Gap {gap:,.0f} · {days_left} hari tersisa")
 
+            # Analisis detail dan rekomendasi tetap ditampilkan setelah ringkasan visual.
             # 5 blok strategi detail
             col_a,col_b=st.columns(2,gap="medium")
             with col_a:
