@@ -1994,19 +1994,23 @@ with st.sidebar:
             _gcp_account=st.secrets.get("gcp_service_account",{})
             _drive_file_id=str(_drive_settings.get("database_file_id","")).strip()
             _drive_database_folder_id=str(_drive_settings.get("database_folder_id",DEFAULT_DRIVE_DATABASE_FOLDER_ID)).strip()
-            _drive_is_folder=not bool(_drive_file_id)
-            _drive_source_id=_drive_file_id or _drive_database_folder_id
+            _drive_database_mode=str(_drive_settings.get("database_mode","auto")).strip().casefold()
+            _drive_prefer_monthly=_drive_database_mode not in {"single","workbook"}
+            _drive_is_folder=_drive_prefer_monthly or not bool(_drive_file_id)
+            _drive_source_id=(_drive_database_folder_id if _drive_prefer_monthly else (_drive_file_id or _drive_database_folder_id))
             _drive_configured=bool(_drive_source_id and _gcp_account)
         except Exception:
-            _drive_settings={}; _gcp_account={}; _drive_configured=False
+            _drive_settings={}; _gcp_account={}; _drive_file_id=""; _drive_database_folder_id=DEFAULT_DRIVE_DATABASE_FOLDER_ID; _drive_prefer_monthly=True; _drive_is_folder=True; _drive_configured=False
         # Drive data is divided into monthly branch spreadsheets so each file stays
-        # small enough to open and update in Google Sheets.
-        _data_source_mode="Google Drive · spreadsheet bulanan" if _drive_configured else "Lokal / unggah"
+        # small enough to open and update in Google Sheets. Auto mode prefers that
+        # branch-scoped path even when an older single-workbook ID remains in Secrets.
+        _data_source_mode=("Google Drive · spreadsheet bulanan" if _drive_configured and _drive_prefer_monthly
+                           else "Google Drive · workbook tunggal" if _drive_configured else "Lokal / unggah")
         source=None
         _drive_database_path=None
         if _data_source_mode.startswith("Google Drive"):
-            st.caption(f"Sumber data: spreadsheet bulanan cabang {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}) di Google Drive.")
-            st.caption("Untuk update harian, buka file bulan berjalan di folder database_monthly_split, tambahkan/perbarui data, lalu gunakan tombol periksa pembaruan.")
+            st.caption(f"Sumber data cabang {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}) dibaca dari Google Drive.")
+            st.caption("Mode otomatis memakai file per cabang dan bulan jika tersedia; workbook gabungan dipakai sebagai fallback.")
             _drive_database_path=APP_DIR/".remote_database"/"database_push.xlsx"
             if st.button("↻ Periksa pembaruan dari Drive",key="refresh_drive_database",width="stretch"):
                 # Refresh Drive metadata/listing only. The normalized DataFrame cache is
@@ -2113,12 +2117,9 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
     """Find the active branch's monthly files under database_monthly_split."""
     from google.oauth2.service_account import Credentials
     from google.auth.transport.requests import AuthorizedSession
-    import csv
-    import uuid
-    from openpyxl import Workbook
     service_account_info=dict(st.secrets["gcp_service_account"])
     credentials=Credentials.from_service_account_info(
-        service_account_info,scopes=["https://www.googleapis.com/auth/drive"]
+        service_account_info,scopes=["https://www.googleapis.com/auth/drive.readonly"]
     )
     session=AuthorizedSession(credentials)
     def children(parent_id):
@@ -2155,66 +2156,17 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
             period=Path(name).stem.upper().replace(f"DATABASE_PUSH_{branch_code}_", "")
             candidates.setdefault(period,{})[suffix]=item
 
-    # Migrate CSV months to Excel in place before removing their CSV copies.
-    # Stream rows into a write-only workbook so large monthly files stay within
-    # Streamlit Cloud's memory limit.
+    # Prefer the verified Excel copy if both formats exist. Listing data must be
+    # read-only: conversion or trashing source files belongs in an explicit admin action.
     monthly_by_period={}
     for period,by_type in candidates.items():
-        xlsx_item=by_type.get(".xlsx")
-        csv_item=by_type.get(".csv")
-        if csv_item:
-            should_convert=(xlsx_item is None or str(csv_item.get("modifiedTime",""))>str(xlsx_item.get("modifiedTime","")))
-            if should_convert:
-                downloaded=session.get(
-                    f"https://www.googleapis.com/drive/v3/files/{csv_item['id']}",
-                    params={"alt":"media","supportsAllDrives":"true"},timeout=(30,900),
-                )
-                downloaded.raise_for_status()
-                raw=downloaded.content
-                try: csv_text=raw.decode("utf-8-sig")
-                except UnicodeDecodeError: csv_text=raw.decode("cp1252")
-                try: dialect=csv.Sniffer().sniff(csv_text[:8192],delimiters=",;\t|")
-                except csv.Error: dialect=csv.excel
-                workbook=Workbook(write_only=True)
-                sheet=workbook.create_sheet("Database")
-                for row in csv.reader(io.StringIO(csv_text),dialect): sheet.append(row)
-                temp_xlsx=APP_DIR/".remote_database"/f"migrate_{branch_code}_{period}_{uuid.uuid4().hex}.xlsx"
-                temp_xlsx.parent.mkdir(parents=True,exist_ok=True)
-                workbook.save(temp_xlsx)
-                payload=temp_xlsx.read_bytes(); temp_xlsx.unlink(missing_ok=True)
-                mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                if xlsx_item:
-                    response=session.patch(
-                        f"https://www.googleapis.com/upload/drive/v3/files/{xlsx_item['id']}",
-                        params={"uploadType":"media","supportsAllDrives":"true","fields":"id,name,size,modifiedTime"},
-                        data=payload,headers={"Content-Type":mime_type},timeout=(30,900),
-                    )
-                else:
-                    boundary="dashboard_"+uuid.uuid4().hex
-                    metadata=json.dumps({"name":Path(csv_item["name"]).with_suffix(".xlsx").name,"mimeType":mime_type,"parents":[branch_folder["id"]]},ensure_ascii=False)
-                    body=(f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata}\r\n"
-                          f"--{boundary}\r\nContent-Type: {mime_type}\r\n\r\n").encode("utf-8")+payload+f"\r\n--{boundary}--".encode("utf-8")
-                    response=session.post(
-                        "https://www.googleapis.com/upload/drive/v3/files",
-                        params={"uploadType":"multipart","supportsAllDrives":"true","fields":"id,name,size,modifiedTime"},
-                        data=body,headers={"Content-Type":f"multipart/related; boundary={boundary}"},timeout=(30,900),
-                    )
-                response.raise_for_status(); xlsx_item=response.json()
-            # Some Drive folders allow the service account to read and upload
-            # files but do not grant delete permission. CSV is never returned to
-            # the dashboard reader; a failed cleanup must not prevent loading
-            # the verified XLSX copy.
-            if xlsx_item:
-                try:
-                    trash=session.patch(
-                        f"https://www.googleapis.com/drive/v3/files/{csv_item['id']}",
-                        params={"supportsAllDrives":"true","fields":"id,trashed"},json={"trashed":True},timeout=30,
-                    )
-                    trash.raise_for_status()
-                except Exception:
-                    pass
-        if xlsx_item:
-            monthly_by_period[period]=xlsx_item
+        chosen=by_type.get(".xlsx") or by_type.get(".csv")
+        if chosen:
+            monthly_by_period[period]=chosen
+    if not any(Path(str(item.get("name",""))).suffix.lower()==".xlsx" for item in monthly_by_period.values()):
+        raise FileNotFoundError(
+            f"Belum ada workbook XLSX bulanan untuk cabang {branch_code}; gunakan database gabungan sebagai fallback."
+        )
     return sorted(monthly_by_period.values(),key=lambda item:item.get("name",""))
 
 def _download_drive_monthly_files(files, destination, service_account_info):
@@ -2267,28 +2219,36 @@ def read_normalized_monthly_branch(branch_code, paths, signature):
     # Build shared categories from the Excel files using only text columns.
     text_columns=[]; categories={}
     excel_paths=[Path(path) for path in paths if Path(path).suffix.lower()==".xlsx"]
+    has_csv=any(Path(path).suffix.lower()==".csv" for path in paths)
     if excel_paths:
         sample=pd.read_excel(excel_paths[0],engine="openpyxl",nrows=1000)
         dimension_names={key(alias) for kind,aliases in ALIASES.items() if kind!="sales" for alias in aliases}
         text_columns=[name for name in sample.columns if not pd.api.types.is_numeric_dtype(sample[name].dtype) or key(name) in dimension_names]
         del sample
-        categories={name:set() for name in text_columns}
-        for path in excel_paths:
-            dimension_data=pd.read_excel(path,engine="openpyxl",usecols=lambda name:name in categories)
-            for name in text_columns:
-                if name in dimension_data:
-                    categories[name].update(dimension_data[name].dropna().astype("string").str.strip().unique().tolist())
-            del dimension_data
+        if not has_csv:
+            categories={name:set() for name in text_columns}
+            for path in excel_paths:
+                dimension_data=pd.read_excel(path,engine="openpyxl",usecols=lambda name:name in categories)
+                for name in text_columns:
+                    if name in dimension_data:
+                        categories[name].update(dimension_data[name].dropna().astype("string").str.strip().unique().tolist())
+                del dimension_data
     shared_dtypes={name:pd.CategoricalDtype(categories=sorted(values)) for name,values in categories.items()}
 
     pieces=[]
     for path in paths:
         if Path(path).suffix.lower()==".xlsx":
             piece=pd.read_excel(path,engine="openpyxl")
-            for name,dtype in shared_dtypes.items():
-                if name in piece: piece[name]=piece[name].astype("string").str.strip().astype(dtype)
+            if not has_csv:
+                for name,dtype in shared_dtypes.items():
+                    if name in piece: piece[name]=piece[name].astype("string").str.strip().astype(dtype)
+        elif Path(path).suffix.lower()==".csv":
+            try:
+                piece=pd.read_csv(path,encoding="utf-8-sig",low_memory=False)
+            except UnicodeDecodeError:
+                piece=pd.read_csv(path,encoding="cp1252",low_memory=False)
         else:
-            raise ValueError(f"Database bulanan harus berupa file Excel (.xlsx): {Path(path).name}")
+            raise ValueError(f"Format database bulanan tidak didukung: {Path(path).name}")
         if not piece.empty: pieces.append(piece)
     if not pieces:
         return pd.DataFrame()
@@ -2547,23 +2507,34 @@ def load_program_targets():
     return pd.concat(pieces,ignore_index=True,sort=False) if pieces else base
 
 if _data_source_mode=="Google Drive · spreadsheet bulanan":
+    df=None
     try:
         _account_fingerprint=hashlib.sha256(json.dumps(dict(_gcp_account),sort_keys=True).encode("utf-8")).hexdigest()
         _monthly_files=_google_drive_monthly_files(_drive_database_folder_id,ACTIVE_BRANCH_CODE,_account_fingerprint)
         _monthly_dir=APP_DIR/".remote_database"/"monthly"/ACTIVE_BRANCH_CODE
         _monthly_paths,_monthly_signature=_download_drive_monthly_files(_monthly_files,_monthly_dir,_gcp_account)
         if not _monthly_paths:
-            st.error(f"Belum ada spreadsheet bulanan untuk cabang {ACTIVE_BRANCH_CODE} di Google Drive.")
-            df=None
+            raise FileNotFoundError(f"Belum ada spreadsheet bulanan untuk cabang {ACTIVE_BRANCH_CODE} di Google Drive.")
         else:
             df=read_normalized_monthly_branch(ACTIVE_BRANCH_CODE,tuple(_monthly_paths),_monthly_signature)
             if df.empty:
-                st.warning(f"Folder {ACTIVE_BRANCH_CODE} belum berisi transaksi. Tambahkan data pada spreadsheet bulan berjalan di Drive.")
-                st.stop()
+                raise FileNotFoundError(f"Folder bulanan {ACTIVE_BRANCH_CODE} belum berisi transaksi.")
+        _default_database=None
+    except FileNotFoundError as _monthly_error:
+        _fallback_id=_drive_file_id or _drive_database_folder_id
+        try:
+            _data_source_mode="Google Drive · workbook tunggal"
+            _default_database=_google_drive_database_path(
+                _fallback_id,_drive_database_path,_gcp_account,not bool(_drive_file_id),
+            )
+            st.warning(f"Data bulanan {ACTIVE_BRANCH_CODE} belum lengkap, jadi dashboard memakai workbook gabungan untuk sementara.")
+        except Exception as _fallback_error:
+            st.error(f"Data bulanan tidak tersedia ({_monthly_error}) dan workbook gabungan gagal dibaca: {_fallback_error}")
+            _default_database=None
     except Exception as _drive_error:
         st.error(f"Tidak dapat membaca spreadsheet bulanan dari Google Drive: {_drive_error}")
         df=None
-    _default_database=None
+        _default_database=None
 elif _data_source_mode.startswith("Google Drive"):
     try:
         _default_database=_google_drive_database_path(

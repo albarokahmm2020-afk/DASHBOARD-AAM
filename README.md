@@ -9,7 +9,9 @@ The Streamlit interface uses the light enterprise theme configured in `.streamli
 Run the dashboard locally with `streamlit run app.py` after installing `requirements.txt`. Google Drive data restoration and sync remain optional and require credentials in Streamlit secrets.
 # Update database dashboard
 
-Untuk pembaruan harian, jangan edit `database_push_branches.xlsx` karena ukurannya terlalu besar untuk Google Sheets. Dashboard membaca data dari folder `database_monthly_split/<BRANCH>/` dan menggabungkan file bulanan.
+Untuk pembaruan harian, jangan edit `database_push_branches.xlsx` karena ukurannya terlalu besar untuk Google Sheets. Dashboard secara default membaca file dari `database_monthly_split/<BRANCH>/` agar hanya mengambil data cabang aktif dan memakai cache lokal untuk file yang tidak berubah. Jika folder bulanan untuk cabang belum memiliki workbook XLSX, dashboard memakai workbook gabungan sebagai fallback.
+
+Mode baca dapat dipilih melalui Streamlit Secrets. `database_mode` default ke `auto`, yang mengutamakan file bulanan meskipun `database_file_id` lama masih tersimpan. Gunakan `database_mode = "single"` hanya jika ingin memaksa pembacaan workbook gabungan.
 
 1. Buka spreadsheet bulan berjalan, misalnya `database_push_BDG_2026_10.xlsx` untuk cabang BDG.
 2. Tambahkan transaksi di baris paling bawah atau koreksi baris yang ada. Pertahankan header kolom dan nama file yang sama; tunggu Drive selesai menyimpan.
