@@ -1843,10 +1843,6 @@ div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal']
 .stMainBlockContainer div[data-testid='stElementContainer']:has(.main-nav-anchor) + div[data-testid='stElementContainer'] div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) {{ background:#1E40AF !important; border-color:#1E40AF !important; box-shadow:0 1px 3px rgba(30,64,175,.2) !important; }}
 .stMainBlockContainer div[data-testid='stElementContainer']:has(.main-nav-anchor) + div[data-testid='stElementContainer'] div[data-testid='stRadio'] div[role='radiogroup'] label:has(input:checked) p {{ color:#FFFFFF !important; font-weight:800 !important; }}
 .main-nav-anchor {{ margin:0 0 2px 2px; color:#475569; font-size:.68rem; font-weight:800; letter-spacing:.12em; }}
-.dashboard-context {{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin:10px 0 16px; padding:18px 20px; background:linear-gradient(110deg,#FFFFFF 0%,#FFFFFF 68%,{UI_HEADER_TINT} 100%); border:1px solid #D8E0EA; border-left:4px solid {UI_ACCENT}; border-radius:12px; box-shadow:0 2px 8px rgba(15,23,42,.045); }}
-.dashboard-context__title {{ margin:0; color:#0F172A; font-size:clamp(1.25rem,2.2vw,1.8rem); font-weight:780; line-height:1.2; letter-spacing:-.025em; }}
-.dashboard-context__subtitle {{ color:#475569; margin-top:5px; font-size:.9rem; line-height:1.45; }}
-.dashboard-context__meta {{ display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; }}
 .dashboard-pill {{ display:inline-flex; align-items:center; gap:6px; border:1px solid #D8E0EA; border-radius:999px; padding:6px 10px; background:#FFFFFF; color:#334155; font-size:.76rem; font-weight:700; white-space:nowrap; }}
 .dashboard-pill--branch {{ background:#EFF6FF; border-color:#BFDBFE; color:#1E40AF; }}
 .dashboard-pill--source {{ background:#F8FAFC; }}
@@ -1861,8 +1857,6 @@ div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal']
 .stDataFrame,.stDataEditor {{ border-radius:9px !important; }}
 div[data-testid='stVegaLiteChart'] {{ border:1px solid #E2E8F0; border-radius:10px; padding:6px; background:#FFFFFF !important; }}
 @media(max-width:760px) {{
-  .dashboard-context {{ align-items:flex-start; flex-direction:column; padding:14px; }}
-  .dashboard-context__meta {{ justify-content:flex-start; }}
   div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] {{ flex-wrap:wrap !important; }}
   div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] label {{ flex:1 1 auto !important; }}
 }}
@@ -1893,24 +1887,7 @@ if st.session_state["dashboard_page"]=="Sasaran per Sales Person Title":
     st.session_state["dashboard_page"]="Sasaran Program"
 if "dashboard_section" not in st.session_state:
     st.session_state["dashboard_section"]=settings.get("dashboard_section","Program Push")
-_section_descriptions={
-    "Performance Sales":"Pantau pencapaian penjualan, target, dan aktivitas sales cabang.",
-    "Program Push":"Pantau actual, target, progres mingguan, dan insight setiap program.",
-    "Menu Insentif":"Lihat kalkulasi insentif dan progres kualifikasi sales cabang.",
-    "Report":"Siapkan laporan operasional dan ringkasan performa cabang.",
-}
 _main_labels=["Performance Sales","Program Push","Menu Insentif","Report"]
-_main_section_preview=st.session_state.get("dashboard_section",settings.get("dashboard_section","Program Push"))
-_main_page_preview=st.session_state.get("dashboard_page",settings.get("dashboard_page","Summary Program"))
-_preview_subtitle=html.escape(_section_descriptions.get(_main_section_preview,"Dashboard performa cabang."))
-if _main_section_preview=="Program Push" and _main_page_preview:
-    _preview_subtitle+=f" · Tampilan {html.escape(str(_main_page_preview))}"
-st.markdown(
-    f"<section class='dashboard-context' aria-label='Konteks dashboard'><div>"
-    f"<h1 class='dashboard-context__title'>{html.escape(str(_main_section_preview))}</h1>"
-    f"<div class='dashboard-context__subtitle'>{_preview_subtitle}</div></div></section>",
-    unsafe_allow_html=True,
-)
 st.markdown("<div class='main-nav-anchor'>NAVIGASI UTAMA</div>",unsafe_allow_html=True)
 main_section=st.radio(
     "Navigasi utama",_main_labels,horizontal=True,key="dashboard_section",
