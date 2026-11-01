@@ -1806,10 +1806,24 @@ div[data-testid='stTable'] td,div[data-testid='stTable'] td p,.table-scroll-wrap
 div[data-testid='stVegaLiteChart'],.vega-embed,.vega-embed canvas,.vega-embed svg {{ background:transparent !important; }}
 hr {{ border-color:#D8E0EA !important; }}
 @media (max-width:900px) {{ .stMainBlockContainer {{ padding-left:1rem !important; padding-right:1rem !important; }} }}
-@media (max-width:640px) {{
+@media (max-width:760px) {{
   .stMainBlockContainer {{ padding:.65rem .7rem 2rem !important; }}
   div[data-testid='stHorizontalBlock'] {{ flex-wrap:wrap !important; gap:.65rem !important; }}
-  div[data-testid='stHorizontalBlock'] > div[data-testid='column'] {{ min-width:100% !important; flex:1 1 100% !important; }}
+  div[data-testid='stHorizontalBlock'] > div[data-testid='column'] {{
+    box-sizing:border-box !important;
+    width:100% !important;
+    max-width:100% !important;
+    min-width:0 !important;
+    flex:1 1 100% !important;
+  }}
+  div[data-testid='stHorizontalBlock'] [data-testid='stSelectbox'],
+  div[data-testid='stHorizontalBlock'] [data-testid='stMultiSelect'],
+  div[data-testid='stHorizontalBlock'] [data-testid='stWidgetLabel'] {{
+    box-sizing:border-box !important;
+    width:100% !important;
+    min-width:0 !important;
+    max-width:100% !important;
+  }}
   div[data-testid='stRadio'] div[role='radiogroup'] {{ align-items:stretch; gap:6px; }}
   div[data-testid='stRadio'] div[role='radiogroup'] label {{ flex:1 1 auto; }}
   .brand {{ min-height:94px !important; padding:9px 10px !important; gap:8px !important; }}
@@ -4629,13 +4643,12 @@ elif main_section=="Report":
         _monthly_dates=pd.to_datetime(df[_monthly_date_col],errors="coerce")
         _monthly_years=sorted(_monthly_dates.dropna().dt.year.astype(int).unique().tolist())
         _monthly_default_year=pd.Timestamp.now().year if pd.Timestamp.now().year in _monthly_years else (_monthly_years[-1] if _monthly_years else pd.Timestamp.now().year)
-        _monthly_filter_cols=st.columns([2,1,1])
-        with _monthly_filter_cols[0]:
-            _monthly_bg_options=sorted(df[_monthly_bg_col].dropna().astype(str).str.strip().unique().tolist())
-            monthly_business_groups=st.multiselect("Bisnis Group",_monthly_bg_options,default=[],key="monthly_report_business_groups",placeholder="Pilih bisnis; kosong = semua")
-        with _monthly_filter_cols[1]:
+        _monthly_bg_options=sorted(df[_monthly_bg_col].dropna().astype(str).str.strip().unique().tolist())
+        monthly_business_groups=st.multiselect("Bisnis Group",_monthly_bg_options,default=[],key="monthly_report_business_groups",placeholder="Pilih bisnis; kosong = semua")
+        _monthly_period_cols=st.columns(2)
+        with _monthly_period_cols[0]:
             monthly_year=st.selectbox("Tahun",_monthly_years or [_monthly_default_year],index=(_monthly_years.index(_monthly_default_year) if _monthly_default_year in _monthly_years else 0),key="monthly_report_year")
-        with _monthly_filter_cols[2]:
+        with _monthly_period_cols[1]:
             _monthly_available_months=sorted(_monthly_dates.loc[_monthly_dates.dt.year.eq(int(monthly_year))].dropna().dt.month.astype(int).unique().tolist())
             _monthly_month_options=_monthly_available_months or list(MONTHS)
             _monthly_default_month=pd.Timestamp.now().month if pd.Timestamp.now().month in _monthly_month_options else _monthly_month_options[-1]
