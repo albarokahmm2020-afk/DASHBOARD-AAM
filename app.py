@@ -796,6 +796,7 @@ st.set_page_config(page_title="CHP AAM | Push Performance", page_icon="📊", la
 RED, NAVY, BLUE = "#C8102E", "#000737", "#22396F"
 MIDNIGHT_BLUE, CREAM = "#0C1D42", "#FCF1CF"
 PROGRAMS = ["RB CHD", "NOO PDB", "PB NOZA", "PB HYC", "PB LUMA"]
+BUILTIN_PROGRAMS = PROGRAMS.copy()
 PROGRAM_NUMBERS = {"RB CHD":"PROGRAM 1", "NOO PDB":"PROGRAM 2", "PB NOZA":"PROGRAM 3", "PB HYC":"PROGRAM 4", "PB LUMA":"PROGRAM 5"}
 PROGRAM_TARGET_DEFAULTS = {"RB CHD":370, "NOO PDB":51, "PB NOZA":119, "PB HYC":285, "PB LUMA":46}
 PROGRAM_FILTER_DEFAULTS = {
@@ -1141,6 +1142,30 @@ def save_settings(settings):
         try: _drive_upload_bytes(SETTINGS_PATH.name,payload,"application/json","settings",ACTIVE_BRANCH_CODE)
         except Exception as exc: st.error(f"Konfigurasi tersimpan sementara, tetapi gagal disinkronkan ke Google Drive: {exc}")
 settings=load_settings()
+# Custom Program Push names are stored in the same branch settings file as the
+# month-specific filters, allowing any number of programs without changing code.
+_custom_program_names=[]
+_saved_custom_program_names=settings.get("custom_programs",[])
+if not isinstance(_saved_custom_program_names,(list,tuple)): _saved_custom_program_names=[]
+for _custom_name in _saved_custom_program_names:
+    _custom_name=" ".join(str(_custom_name).split())
+    if _custom_name and _custom_name.casefold() not in {p.casefold() for p in BUILTIN_PROGRAMS} and _custom_name.casefold() not in {p.casefold() for p in _custom_program_names}:
+        _custom_program_names.append(_custom_name)
+PROGRAMS=BUILTIN_PROGRAMS+_custom_program_names
+for _program_index,_program_name in enumerate(PROGRAMS,1):
+    PROGRAM_NUMBERS.setdefault(_program_name,f"PROGRAM {_program_index}")
+    PROGRAM_TARGET_DEFAULTS.setdefault(_program_name,0)
+    PROGRAM_FILTER_DEFAULTS.setdefault(_program_name,{})
+    PROGRAM_FILTER_DEFAULTS[_program_name].setdefault("year","All")
+    PROGRAM_FILTER_DEFAULTS[_program_name].setdefault("month","All")
+    PROGRAM_FILTER_DEFAULTS[_program_name].setdefault("principal_name","All")
+    PROGRAM_FILTER_DEFAULTS[_program_name].setdefault("principal","All")
+    PROGRAM_FILTER_DEFAULTS[_program_name].setdefault("product_code","All")
+    PROGRAM_FILTER_DEFAULTS[_program_name].setdefault("product","All")
+    PROGRAM_FILTER_DEFAULTS[_program_name].setdefault("channel_group","All")
+    PROGRAM_FILTER_DEFAULTS[_program_name].setdefault("business_group","All")
+    PROGRAM_FILTER_DEFAULTS[_program_name].setdefault("metric","Total Relasi Beli Transaksi")
+    PROGRAM_SUMMARIES.setdefault(_program_name,f"Monitoring { _program_name } sesuai filter dan periode yang dipilih.")
 def program_label(program, month=None):
     if month is None:
         month=globals().get("_active_push_month")
@@ -2079,21 +2104,27 @@ with st.sidebar:
                     st.session_state[state_key]=fingerprint
                     st.success(f"{path.name} diperbarui.")
             st.caption(f"File aktif: {path.name}" if path.exists() else f"File belum tersedia: {path.name}")
+    _selection_push_month=globals().get("_active_push_month",list(MONTHS.values())[min(max(int(st.session_state.get("push_month_tab_idx",pd.Timestamp.now().month-1)),0),11)])
     if not settings.get("program_selection_initialized"):
         settings["programs"] = PROGRAMS.copy()
         settings["program_selection_initialized"] = True
         save_settings(settings)
-    # Keep the active selection aligned with the persisted program list when
-    # that list changes in settings.
-    _saved_programs = [p for p in settings.get("programs", PROGRAMS) if p in PROGRAMS]
-    _programs_signature = tuple(_saved_programs)
-    if st.session_state.get("_programs_signature") != _programs_signature:
-        st.session_state["programs"] = _saved_programs or PROGRAMS
-        st.session_state["_programs_signature"] = _programs_signature
-    elif "programs" not in st.session_state:
-        saved_programs=settings.get("programs",PROGRAMS)
-        st.session_state["programs"]=[p for p in saved_programs if p in PROGRAMS] or PROGRAMS
-    programs=st.multiselect("Pilih program Push",PROGRAMS,key="programs",format_func=program_label)
+    # Program count may vary each month; keep each month's visible selection
+    # independent while migrating the previous global selection automatically.
+    _programs_by_month=settings.setdefault("programs_by_month",{})
+    _legacy_selection=settings.get("programs",PROGRAMS)
+    for _program_month in MONTHS.values():
+        if _program_month not in _programs_by_month:
+            _programs_by_month[_program_month]=[p for p in _legacy_selection if p in PROGRAMS]
+    _saved_programs=[p for p in _programs_by_month.get(_selection_push_month,[]) if p in PROGRAMS]
+    _program_widget_key=f"programs_{key(_selection_push_month).replace(' ','_')}"
+    _program_signature_key=f"_programs_signature_{key(_selection_push_month).replace(' ','_')}"
+    _programs_signature=(tuple(PROGRAMS),tuple(_saved_programs))
+    if st.session_state.get(_program_signature_key)!=_programs_signature:
+        st.session_state[_program_widget_key]=_saved_programs
+        st.session_state[_program_signature_key]=_programs_signature
+    programs=st.multiselect("Program yang ditampilkan bulan ini",PROGRAMS,key=_program_widget_key,format_func=program_label,
+                            help="Pilih jumlah program sesuai kebutuhan bulan ini. Daftar pilihan tersimpan per bulan.")
 
 @st.cache_data(show_spinner="Membaca database…")
 def read_local_file(path,modified_ns,file_size,sheet_name=0):
@@ -2677,6 +2708,38 @@ if main_section=="Program Push" and "_active_push_month" in dir():
     with st.expander(f"⚙️ Konfigurasi Program · {_active_push_month}", expanded=False):
         st.caption("Pilih bulan transaksi, tahun, metric, dan filter masing-masing program untuk perhitungan Summary.")
         st.caption("Perubahan konfigurasi tersimpan otomatis dan akan dipulihkan saat dashboard dibuka kembali.")
+        st.markdown("**Tambah Program Push untuk bulan ini**")
+        with st.form(f"add_program_push_{key(_active_push_month).replace(' ','_')}",clear_on_submit=True):
+            _new_program_name=st.text_input("Nama program baru",max_chars=70,placeholder="Contoh: PB PROGRAM BARU")
+            _add_program_submit=st.form_submit_button("＋ Tambahkan program",type="primary")
+        if _add_program_submit:
+            _new_program_name=" ".join(str(_new_program_name or "").split())
+            _program_name_keys={p.casefold() for p in PROGRAMS}
+            if not _new_program_name:
+                st.error("Masukkan nama program terlebih dahulu.")
+            elif _new_program_name.casefold() in _program_name_keys:
+                st.error("Nama program tersebut sudah terdaftar. Pilih program itu dari daftar bulan ini.")
+            else:
+                _custom_programs=settings.setdefault("custom_programs",[])
+                if not isinstance(_custom_programs,list): _custom_programs=[]
+                _custom_programs.append(_new_program_name)
+                settings["custom_programs"]=_custom_programs
+                _month_configs=settings.setdefault("program_config_by_month",{}).setdefault(_active_push_month,{})
+                _month_configs.setdefault(_new_program_name,{
+                    "display_name":_new_program_name,"year":"All","month":"All",
+                    "calculation_month":_active_push_month,"principal_name":"All",
+                    "principal":"All","product_code":"All","product":"All",
+                    "channel_group":"All","business_group":"All",
+                    "metric":"Total Relasi Beli Transaksi","target_total":0,
+                })
+                _month_selected=list(st.session_state.get(_program_widget_key,_saved_programs))
+                if _new_program_name not in _month_selected:
+                    _month_selected.append(_new_program_name)
+                settings.setdefault("programs_by_month",{})[_active_push_month]=_month_selected
+                settings["programs"]=_month_selected
+                save_settings(settings)
+                st.rerun()
+        st.caption(f"Program aktif bulan ini: {len(programs)}. Pilih program di panel sidebar; jumlahnya dapat berbeda untuk setiap bulan.")
         _template=target_template().to_csv(index=False).encode("utf-8-sig")
         st.download_button("Unduh template target CSV",_template,"template_target_chp_aam.csv","text/csv",key=f"target_template_{_active_push_month}")
         st.caption("Upload target di dalam setiap program. Kolom wajib: Year, Month, Sales Person Title, Target. Kolom filter opsional mengikuti pilihan konfigurasi program.")
@@ -6475,6 +6538,9 @@ elif page=="Summary Program":
                 deviation_text=fmt_summary(deviation,selected["metric"])
             else:
                 deviation_text=f"{deviation:,.0f} relasi" if deviation is not None else "—"
+            try: _monthly_deviation_value=float(deviation) if deviation is not None and pd.notna(deviation) else 0.0
+            except (TypeError,ValueError): _monthly_deviation_value=0.0
+            deviation_color="#B91C1C" if _monthly_deviation_value<0 else ("#15803D" if _monthly_deviation_value>0 else "#111827")
             if weekly_deviation is None:
                 weekly_deviation_text="—"
             elif selected["metric"]=="Total Sales":
@@ -6519,7 +6585,7 @@ elif page=="Summary Program":
 <div class='score-filter'>{safe(scope_note)}</div>
 <div class='score-row'>Target Bulanan: <b>{safe(fmt_summary(tgt,selected['metric']))}</b></div>
 <div class='score-row'>Actual Bulanan: <b>{safe(actual_text)}</b></div>
-<div class='score-row'>Deviasi Bulanan: <b>{safe(deviation_text)}</b></div>
+<div class='score-row'>Deviasi Bulanan: <b style='color:{deviation_color}'>{safe(deviation_text)}</b></div>
 <div class='score-ach'>Pencapaian Bulanan: <strong style='color:{ach_color}'>{safe(ach_text)}</strong></div>
 <div class='score-row'>Target Mingguan: <b>{safe(fmt_summary(weekly_target,selected['metric']))}</b></div>
 <div class='score-row'>Actual {safe(weekly_label or 'Minggu berjalan')}: <b>{safe(fmt_summary(weekly_actual,selected['metric']))}</b></div>
@@ -6748,7 +6814,8 @@ elif page=="Summary Program":
             if _on_track:
                 st.markdown(f"- **Sudah on track:** {_safe_insight(', '.join(_on_track))}. Pertahankan aktivitas dan jangan lepaskan peluang closing.")
     settings.setdefault("filters",{}).update(filter_values)
-    settings["programs"]=programs
+    settings.setdefault("programs_by_month",{})[_selection_push_month]=list(programs)
+    settings["programs"]=list(programs)
     settings["dashboard_page"]=page
     # ── Export PPT Summary Program ───────────────────────────────────────────
     if _PPTX_OK and programs:
@@ -6920,7 +6987,8 @@ elif page=="Program by Sales Person Title":
             st.bar_chart(by_title.set_index("Sales Person Title")[["Actual","Target"]])
         settings.setdefault("filters",{})[program]=selected
         settings["dashboard_page"]=page
-        settings["programs"]=programs
+        settings.setdefault("programs_by_month",{})[_selection_push_month]=list(programs)
+        settings["programs"]=list(programs)
         # ── Export PPT Program by Sales Person Title ─────────────────────────
         if _PPTX_OK:
             st.divider()
