@@ -1813,7 +1813,9 @@ div[data-testid='stTable'] th,div[data-testid='stTable'] th p,.table-scroll-wrap
 div[data-testid='stTable'] td,div[data-testid='stTable'] td p,.table-scroll-wrap td {{ color:#1E293B; border-color:#E2E8F0; }}
 .table-scroll-wrap {{ max-width:100%; overflow-x:auto !important; }}
 .table-scroll-wrap th,.table-scroll-wrap td {{ white-space:nowrap; }}
-div[data-testid='stVegaLiteChart'],.vega-embed,.vega-embed canvas,.vega-embed svg {{ background:transparent !important; }}
+div[data-testid='stVegaLiteChart'] {{ width:100% !important; max-width:100% !important; min-width:0 !important; overflow:hidden !important; }}
+div[data-testid='stVegaLiteChart'] > div,.vega-embed {{ width:100% !important; max-width:100% !important; min-width:0 !important; box-sizing:border-box !important; }}
+.vega-embed canvas,.vega-embed svg {{ display:block; max-width:100% !important; background:transparent !important; }}
 hr {{ border-color:#D8E0EA !important; }}
 @media (max-width:900px) {{ .stMainBlockContainer {{ padding-left:1rem !important; padding-right:1rem !important; }} }}
 @media (max-width:760px) {{
@@ -5478,7 +5480,7 @@ elif main_section=="Performance Sales":
 <tbody>{rows}</tbody><tfoot>{_row(total_row,True)}</tfoot></table></div>
 <style>
 html,body{{margin:0;padding:0;background:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
-.table-wrap{{width:100%;overflow:visible}}table{{width:100%;border-collapse:collapse;table-layout:auto;background:#F4F7FB;border:1px solid #C7D4E5}}
+.table-wrap{{width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}}table{{width:max-content;min-width:100%;border-collapse:collapse;table-layout:auto;background:#F4F7FB;border:1px solid #C7D4E5}}
 th{{background:linear-gradient(180deg,#335A9F 0%,#24477F 100%);color:#fff;font-weight:800;font-size:13px;line-height:1.1;border:1px solid #1D3B70;padding:7px 6px;text-align:left;white-space:nowrap;cursor:pointer}}
 td{{font-size:13px;line-height:1.1;border:1px solid #D4DEEA;color:#1B2E46;padding:7px 6px;white-space:nowrap}}
 tbody tr:nth-child(odd) td{{background:#F4F7FB}}tbody tr:nth-child(even) td{{background:#E8EEF6}}
@@ -5553,7 +5555,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 xOffset=alt.XOffset("Jenis:N"),y=alt.Y("Nilai:Q",title="Sales Value Gross / Target",scale=alt.Scale(domainMin=0),axis=alt.Axis(format="~s",titlePadding=10)),
                 tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("Jenis:N",title="Metrik"),alt.Tooltip("Nilai:Q",title="Nominal",format=",.0f")],
                 color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#335A9F","#AAB8CC"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)))
-            _bars_chart=bars.properties(height=265)
+            _bars_chart=bars.properties(height=265,width="container")
             _at_data=trend.dropna(subset=["A/T %"])
             _at_max=float(_at_data["A/T %"].max()) if not _at_data.empty else 120
             _at_axis=max(120,math.ceil(_at_max/20)*20)
@@ -5562,7 +5564,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 x=alt.X("Month:N",sort=trend["Month"].tolist(),axis=alt.Axis(title=None,labelAngle=0,labelPadding=5)),
                 y=alt.Y("A/T %:Q",title="Pencapaian A/T",scale=alt.Scale(domain=[0,_at_axis]),axis=alt.Axis(format=".0f",labelExpr="datum.value + '%'",tickCount=4)),
                 tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("A/T %:Q",title="A/T",format=".1f")])
-            _at_chart=alt.layer(_at_rule,_at_line).properties(height=105)
+            _at_chart=alt.layer(_at_rule,_at_line).properties(height=105,width="container")
             _trend_chart=alt.vconcat(_bars_chart,_at_chart,spacing=0,padding={"left":10,"right":8,"top":6,"bottom":0}).resolve_scale(x="shared").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=11,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E8EDF3",gridDash=[3,4],titlePadding=7).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
             st.altair_chart(_trend_chart,width="stretch")
 
@@ -5580,7 +5582,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     _scatter=alt.Chart(_quad).mark_circle(size=100,opacity=.82,stroke="#FFFFFF",strokeWidth=1).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Kontribusi %:Q",title="Kontribusi Sales Cabang (%)",scale=alt.Scale(domainMin=0)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#0F9B8E"),alt.value("#335A9F")),tooltip=["Sales Person",alt.Tooltip("Actual:Q",format=",.0f"),alt.Tooltip("Target:Q",format=",.0f"),alt.Tooltip("A/T %:Q",format=".1f"),alt.Tooltip("Kontribusi %:Q",format=".1f"),alt.Tooltip("Gap:Q",format=",.0f")])
                     _vx=alt.Chart(pd.DataFrame({"x":[100]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(x="x:Q")
                     _hy=alt.Chart(pd.DataFrame({"y":[_median]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(y="y:Q")
-                    _quad_chart=alt.layer(_scatter,_vx,_hy).properties(height=250).configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
+                    _quad_chart=alt.layer(_scatter,_vx,_hy).properties(height=250,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
                     st.altair_chart(_quad_chart,width="stretch")
                 else:
                     st.info("Kolom Sales Person Title belum tersedia pada database aktif.")
@@ -5678,7 +5680,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                         x=alt.X("DEV Bulanan:Q",title="Gap terhadap target",axis=alt.Axis(format="~s")),
                         y=alt.Y("Principal ID:N",sort="-x",title=None),
                         color=alt.Color("Arah:N",scale=alt.Scale(domain=["Di atas target","Di bawah target"],range=["#0F9B8E","#D95D67"]),legend=None),
-                        tooltip=["Principal ID",alt.Tooltip("ACT Bulanan:Q",title="Actual",format=",.0f"),alt.Tooltip("TGT Bulanan:Q",title="Target",format=",.0f"),alt.Tooltip("DEV Bulanan:Q",title="Gap",format=",.0f")]).properties(height=max(180,min(300,26*len(_gap_frame))))
+                        tooltip=["Principal ID",alt.Tooltip("ACT Bulanan:Q",title="Actual",format=",.0f"),alt.Tooltip("TGT Bulanan:Q",title="Target",format=",.0f"),alt.Tooltip("DEV Bulanan:Q",title="Gap",format=",.0f")]).properties(height=max(180,min(300,26*len(_gap_frame))),width="container")
                     st.altair_chart(_gap_chart.configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3"),width="stretch")
                 else:
                     st.caption("Tidak ada gap principal pada periode terpilih.")
