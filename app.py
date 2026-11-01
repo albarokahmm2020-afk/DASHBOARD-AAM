@@ -2766,7 +2766,7 @@ if main_section=="Program Push" and "_active_push_month" in dir():
             with _c1:
                 _name_key=f"pbm2_name_{_active_push_month}_{key(_p).replace(' ','_')}"
                 _sync_config_widget(_name_key,_sn)
-                _nn = st.text_input("Nama",value=_sn,
+                _nn = st.text_input("Nama",
                     key=_name_key,
                     label_visibility="collapsed", placeholder=f"Nama program {PROGRAM_NUMBERS.get(_p,'')}")
             with _c2:
