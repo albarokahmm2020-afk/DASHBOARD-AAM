@@ -2035,13 +2035,12 @@ with st.sidebar:
         if _data_source_mode.startswith("Google Drive"):
             st.caption(f"Sumber data cabang {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}) dibaca dari Google Drive.")
             st.caption("Mode otomatis memakai file per cabang dan bulan jika tersedia; workbook gabungan dipakai sebagai fallback.")
+            st.caption("File yang tidak berubah memakai cache lokal. Tekan Periksa pembaruan dari Drive setelah memperbarui file.")
             _drive_database_path=APP_DIR/".remote_database"/"database_push.xlsx"
             if st.button("↻ Periksa pembaruan dari Drive",key="refresh_drive_database",width="stretch"):
-                # Refresh Drive metadata/listing only. The normalized DataFrame cache is
-                # keyed by each file's modifiedTime and size, so a changed workbook
-                # naturally gets a new cache key. Clearing all resource caches here
-                # duplicates large branch data in memory and can crash Streamlit Cloud.
-                st.cache_data.clear()
+                # Set a flag so only Drive metadata/listing caches are cleared
+                # after their functions are defined later in this script.
+                st.session_state["_force_drive_metadata_refresh"]=True
                 st.rerun()
         else:
             source=st.file_uploader("Ganti database untuk sesi ini (opsional)",type=["xlsx","xls"],key="db")
@@ -2136,7 +2135,7 @@ def _google_drive_metadata(source_id, account_fingerprint, is_folder=False):
     response.raise_for_status()
     return response.json()
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint):
     """Find the active branch's monthly files under database_monthly_split."""
     from google.oauth2.service_account import Credentials
@@ -2195,13 +2194,8 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
 
 def _download_drive_monthly_files(files, destination, service_account_info):
     """Download changed month files one at a time and keep a local reusable copy."""
-    from google.oauth2.service_account import Credentials
-    from google.auth.transport.requests import AuthorizedSession
     import uuid
-    credentials=Credentials.from_service_account_info(
-        dict(service_account_info),scopes=["https://www.googleapis.com/auth/drive.readonly"]
-    )
-    session=AuthorizedSession(credentials)
+    session=None
     destination=Path(destination); destination.mkdir(parents=True,exist_ok=True)
     paths=[]; signatures=[]
     for item in files:
@@ -2210,6 +2204,13 @@ def _download_drive_monthly_files(files, destination, service_account_info):
         version=f"{item.get('modifiedTime','')}:{item.get('size','')}"
         marker=local_path.with_suffix(local_path.suffix+".version")
         if not (local_path.exists() and marker.exists() and marker.read_text(encoding="utf-8")==version):
+            if session is None:
+                from google.oauth2.service_account import Credentials
+                from google.auth.transport.requests import AuthorizedSession
+                credentials=Credentials.from_service_account_info(
+                    dict(service_account_info),scopes=["https://www.googleapis.com/auth/drive.readonly"]
+                )
+                session=AuthorizedSession(credentials)
             response=session.get(
                 f"https://www.googleapis.com/drive/v3/files/{item['id']}",
                 params={"alt":"media","supportsAllDrives":"true"},timeout=(30,900),
@@ -2529,6 +2530,10 @@ def load_program_targets():
                 fallback["Program"]=program
                 pieces.append(fallback)
     return pd.concat(pieces,ignore_index=True,sort=False) if pieces else base
+
+if st.session_state.pop("_force_drive_metadata_refresh",False):
+    _google_drive_metadata.clear()
+    _google_drive_monthly_files.clear()
 
 if _data_source_mode=="Google Drive · spreadsheet bulanan":
     df=None
