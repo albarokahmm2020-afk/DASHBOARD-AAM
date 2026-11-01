@@ -875,19 +875,29 @@ def _drive_storage_folder(category, branch=None):
         root_id=str(configured_root).strip()
     if not root_id:
         raise RuntimeError("Sinkronisasi perlu Shared Drive. Atur [google_drive].storage_folder_id ke ID folder tujuan di Shared Drive.")
-    response=AuthorizedSession(_drive_service_credentials()).get(
-        f"https://www.googleapis.com/drive/v3/files/{root_id}",
-        params={"fields":"id,name,mimeType,driveId,capabilities(canAddChildren)","supportsAllDrives":"true"},
-        timeout=30,
-    )
-    if response.status_code==403:
-        raise RuntimeError("Akun layanan tidak dapat mengakses folder Shared Drive. Tambahkan akun layanan sebagai anggota Shared Drive dengan peran Kontributor.")
-    response.raise_for_status()
-    root=response.json()
-    if root.get("mimeType")!="application/vnd.google-apps.folder" or not root.get("driveId"):
+    session=AuthorizedSession(_drive_service_credentials())
+    def shared_drive_folder(folder_id):
+        response=session.get(
+            f"https://www.googleapis.com/drive/v3/files/{folder_id}",
+            params={"fields":"id,name,mimeType,driveId,capabilities(canAddChildren)","supportsAllDrives":"true"},
+            timeout=30,
+        )
+        if response.status_code in (400,403,404):
+            return None
+        response.raise_for_status()
+        item=response.json()
+        return item if item.get("mimeType")=="application/vnd.google-apps.folder" and item.get("driveId") else None
+
+    root=shared_drive_folder(root_id)
+    if root is None and root_id!=DEFAULT_DRIVE_STORAGE_FOLDER_ID:
+        # A stale/custom Secrets value should not break every save. Recover to
+        # the known Shared Drive root supplied for this dashboard.
+        root_id=DEFAULT_DRIVE_STORAGE_FOLDER_ID
+        root=shared_drive_folder(root_id)
+    if root is None:
         raise _DriveStorageFolderNotSharedDriveError(
-            "storage_folder_id harus berupa ID folder di dalam Shared Drive. "
-            "Perbarui [google_drive].storage_folder_id di Streamlit Secrets atau hapus nilai lama agar memakai folder data default."
+            "Folder penyimpanan Google Drive tidak valid atau tidak dapat diakses. "
+            "Periksa storage_folder_id dan pastikan akun layanan dapat mengakses folder default dashboard."
         )
     if root.get("capabilities",{}).get("canAddChildren") is False:
         raise RuntimeError("Akun layanan dapat melihat Shared Drive tetapi tidak dapat menambah file. Berikan peran Kontributor atau Pengelola Konten.")
