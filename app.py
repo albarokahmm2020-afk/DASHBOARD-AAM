@@ -1750,11 +1750,17 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
         text=str(value).strip()
         if text.endswith(".0") and text[:-2].isdigit(): text=text[:-2]
         return text.casefold()
-    source[required["ho_target"]]=pd.to_numeric(source[required["ho_target"]],errors="coerce").fillna(0)
-    non_integer=(source[required["ho_target"]]-source[required["ho_target"]].round()).abs()>1e-8
+    def parse_amount(values):
+        parsed=pd.to_numeric(values,errors="coerce")
+        retry=parsed.isna()&values.notna()
+        if retry.any(): parsed.loc[retry]=pd.to_numeric(values.loc[retry].astype("string").str.replace(",","",regex=False),errors="coerce")
+        return parsed.fillna(0)
+    ho_col=required["ho_target"]
+    ho_values=parse_amount(source[ho_col])
+    non_integer=(ho_values-ho_values.round()).abs()>1e-8
     if non_integer.any(): raise ValueError("TARGET_REKOMENDASI_HO harus bilangan bulat.")
-    source[required["ho_target"]]=source[required["ho_target"]].round().astype("int64")
-    source[required["branch_target"]]=source[required["ho_target"]].astype("int64")
+    ho_values=ho_values.round().astype("int64")
+    source[required["branch_target"]]=ho_values.astype("int64")
     alloc=allocations.copy()
     alloc["TARGET_CABANG"]=pd.to_numeric(alloc["TARGET_CABANG"],errors="coerce").fillna(0).round().astype("int64")
     alloc_key_names=[name for name in ["YEAR_ID","MONTH_ID"] if name in alloc.columns]+["BUSINESS_GROUP","SALESPERSON_POSITION","PRINCIPLE ID","CHANNEL_OUTLET_GROUP"]
@@ -1773,7 +1779,7 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
         raise ValueError("Principal ID breakdown tidak ada di template; ITEM_SUBLINI dan SUBLINI_PRODUCT tidak bisa dipetakan: "+", ".join(pid[-1] for pid in missing_pids[:20]))
     target_totals={pid:sum(int(row["TARGET_CABANG"]) for row in rows) for pid,rows in targets_by_pid.items()}
     source_pid_totals={}
-    for key,amount in zip(source_pid_keys,source[required["ho_target"]].tolist()): source_pid_totals[key]=source_pid_totals.get(key,0)+int(amount)
+    for key,amount in zip(source_pid_keys,ho_values.tolist()): source_pid_totals[key]=source_pid_totals.get(key,0)+int(amount)
     total_mismatch=[(pid,target_totals[pid],source_pid_totals.get(pid,0)) for pid in targets_by_pid if target_totals[pid]!=source_pid_totals.get(pid,0)]
     if total_mismatch:
         details="; ".join(f"{pid[-1]}: Step 1 {target:,} vs TARGET_REKOMENDASI_HO {ho:,}" for pid,target,ho in total_mismatch[:12])
@@ -1787,25 +1793,25 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
         pid_indices=[idx for idx,key in enumerate(source_pid_keys) if key==pid]
         cell_keys=[cell_key(row) for row in cells]
         cell_weights=pd.Series([max(0,int(row["TARGET_CABANG"])) for row in cells],dtype="float64")
-        principal_total=sum(int(source.at[idx,required["ho_target"]]) for idx in pid_indices)
+        principal_total=sum(int(ho_values.loc[idx]) for idx in pid_indices)
         expected_cells=_allocate_integer_amount(principal_total,cell_weights).tolist()
         remaining_cells=expected_cells[:]
         for group_key,indices in groups.items():
             group_pid=tuple(group_key[index] for index in ([0,1,3,5] if "YEAR_ID" in alloc.columns and "MONTH_ID" in alloc.columns else [3,5]))
             if group_pid!=pid: continue
-            item_total=sum(int(source.at[idx,required["ho_target"]]) for idx in indices)
+            item_total=sum(int(ho_values.loc[idx]) for idx in indices)
             item_cells=_allocate_integer_capped(item_total,cell_weights,remaining_cells)
             remaining_cells=[remaining_cells[i]-int(item_cells.iloc[i]) for i in range(len(remaining_cells))]
             original_group=source.loc[indices].copy()
             territory_col=required["territory"]
             territory_keys=list(dict.fromkeys(norm(source.at[idx,territory_col]) for idx in indices))
-            territory_weights=pd.Series([sum(int(source.at[idx,required["ho_target"]]) for idx in indices if norm(source.at[idx,territory_col])==territory) for territory in territory_keys],dtype="float64")
+            territory_weights=pd.Series([sum(int(ho_values.loc[idx]) for idx in indices if norm(source.at[idx,territory_col])==territory) for territory in territory_keys],dtype="float64")
             source.loc[indices,required["branch_target"]]=0
             for cell_index,cell_target in item_cells.items():
                 seller,channel=cell_keys[cell_index]
                 matched=[idx for idx in indices if norm(source.at[idx,required["salesperson"]])==seller and norm(source.at[idx,required["channel"]])==channel]
                 if matched:
-                    row_weights=pd.to_numeric(original_group.loc[matched,required["ho_target"]],errors="coerce").fillna(0).clip(lower=0)
+                    row_weights=parse_amount(original_group.loc[matched,ho_col]).clip(lower=0)
                     if float(row_weights.sum())<=0:
                         row_weights=pd.Series([1.0]*len(matched),index=matched)
                     shares=_allocate_integer_amount(int(cell_target),row_weights)
@@ -1828,10 +1834,12 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
         if any(remaining_cells):
             raise ArithmeticError(f"TARGET_CABANG belum terplot penuh untuk Principal ID {pid[-1]} per ITEM_SUBLINI/SUBLINI_PRODUCT.")
     if new_rows: source=pd.concat([source,pd.DataFrame(new_rows,columns=source.columns)],ignore_index=True)
-    source[required["ho_target"]]=pd.to_numeric(source[required["ho_target"]],errors="coerce").fillna(0).round().astype("int64")
     source[required["branch_target"]]=pd.to_numeric(source[required["branch_target"]],errors="coerce").fillna(0).round().astype("int64")
-    check=source.groupby(group_names,dropna=False)[[required["ho_target"],required["branch_target"]]].sum()
-    if (check[required["ho_target"]]!=check[required["branch_target"]]).any():
+    check_source=source[group_names].copy()
+    check_source["_HO_CHECK"]=parse_amount(source[ho_col])
+    check_source["_BRANCH_CHECK"]=pd.to_numeric(source[required["branch_target"]],errors="coerce").fillna(0)
+    check=check_source.groupby(group_names,dropna=False)[["_HO_CHECK","_BRANCH_CHECK"]].sum()
+    if (check["_HO_CHECK"]!=check["_BRANCH_CHECK"]).any():
         raise ArithmeticError("Total TARGET_CABANG tidak sama dengan TARGET_REKOMENDASI_HO pada item, Principal ID, dan sublini.")
     return source
 
