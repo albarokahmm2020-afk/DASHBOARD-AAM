@@ -1634,7 +1634,7 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
     target=allocations.groupby(key_names,as_index=False,dropna=False)["TARGET_CABANG"].sum()
     target_records=list(target.to_dict("records"))
     def target_key(row): return tuple(norm_value(row[name]) for name in key_names)
-    def principal_key(row): return tuple(norm_value(row[name]) for name in (["BUSINESS_GROUP","PRINCIPLE ID"] if "BUSINESS_GROUP" in principal_order else ["PRINCIPLE ID"]))
+    def principal_key(row): return tuple(norm_value(row[name]) for name in (["BUSINESS_GROUP","PRINCIPLE ID"] if "business_group" in principal_order else ["PRINCIPLE ID"]))
     target_lookup={target_key(row):float(row["TARGET_CABANG"]) for row in target_records}
     target_pid_totals={}
     for row in target_records:
