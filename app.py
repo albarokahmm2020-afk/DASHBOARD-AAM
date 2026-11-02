@@ -879,10 +879,13 @@ def _drive_storage_folder(category, branch=None):
     # Migrate the previous built-in destination if it was copied into Cloud
     # Secrets. An explicit newer destination still takes precedence.
     if configured_root is None or str(configured_root).strip()==LEGACY_DEFAULT_DRIVE_STORAGE_FOLDER_ID:
-        root_id=DEFAULT_DRIVE_STORAGE_FOLDER_ID
-    else:
-        root_id=str(configured_root).strip()
-    if not root_id:
+        configured_root=DEFAULT_DRIVE_STORAGE_FOLDER_ID
+    root_candidates=[]
+    for candidate in (configured_root,drive_settings.get("database_folder_id"),DEFAULT_DRIVE_STORAGE_FOLDER_ID):
+        candidate=str(candidate or "").strip()
+        if candidate and candidate not in root_candidates and candidate!=LEGACY_DEFAULT_DRIVE_STORAGE_FOLDER_ID:
+            root_candidates.append(candidate)
+    if not root_candidates:
         raise RuntimeError("Sinkronisasi perlu Shared Drive. Atur [google_drive].storage_folder_id ke ID folder tujuan di Shared Drive.")
     session=AuthorizedSession(_drive_service_credentials())
     def shared_drive_folder(folder_id):
@@ -897,19 +900,22 @@ def _drive_storage_folder(category, branch=None):
         item=response.json()
         return item if item.get("mimeType")=="application/vnd.google-apps.folder" and item.get("driveId") else None
 
-    root=shared_drive_folder(root_id)
-    if root is None and root_id!=DEFAULT_DRIVE_STORAGE_FOLDER_ID:
-        # A stale/custom Secrets value should not break every save. Recover to
-        # the known Shared Drive root supplied for this dashboard.
-        root_id=DEFAULT_DRIVE_STORAGE_FOLDER_ID
-        root=shared_drive_folder(root_id)
+    root=None; root_id=None; readable_shared_drive=False
+    for candidate in root_candidates:
+        candidate_root=shared_drive_folder(candidate)
+        if candidate_root is None:
+            continue
+        readable_shared_drive=True
+        if candidate_root.get("capabilities",{}).get("canAddChildren") is False:
+            continue
+        root_id=candidate; root=candidate_root; break
     if root is None:
+        if readable_shared_drive:
+            raise RuntimeError("Akun layanan dapat melihat Shared Drive tetapi tidak dapat membuat file di folder tujuan. Berikan peran Kontributor/Pengelola Konten pada folder storage_folder_id atau database_folder_id.")
         raise _DriveStorageFolderNotSharedDriveError(
-            "Folder penyimpanan Google Drive tidak valid atau tidak dapat diakses. "
-            "Periksa storage_folder_id dan pastikan akun layanan dapat mengakses folder default dashboard."
+            "Folder penyimpanan Google Drive tidak dapat diakses sebagai folder Shared Drive. "
+            "Periksa storage_folder_id dan database_folder_id serta bagikan folder Shared Drive kepada akun layanan dashboard."
         )
-    if root.get("capabilities",{}).get("canAddChildren") is False:
-        raise RuntimeError("Akun layanan dapat melihat Shared Drive tetapi tidak dapat menambah file. Berikan peran Kontributor atau Pengelola Konten.")
     folder_id=_drive_folder_id("Dashboard_Data" if category!="exports" else "Dashboard_Exports",root_id)
     if branch:
         folder_id=_drive_folder_id(str(branch),folder_id)
@@ -1258,7 +1264,7 @@ def _breakdown_target_columns(frame):
             for name,candidates in aliases.items()}
 
 def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_basis="Sales Value Gross"):
-    """Allocate each subline's HO target among salespeople by the prior 3-month average."""
+    """Allocate each HO target line by product attributes and prior 3-month average."""
     raw=source_frame.copy()
     columns=_breakdown_target_columns(raw)
     required=["subline","salesperson","ho_target"]
@@ -1281,17 +1287,6 @@ def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_
     invalid=raw["TARGET_REKOMENDASI_HO"].isna()
     if invalid.any():
         raise ValueError(f"TARGET_REKOMENDASI_HO kosong/non-angka pada {int(invalid.sum())} baris.")
-
-    # The HO target is repeated on each salesperson row in the source. It is a
-    # single subline total, so validate consistency and use one value per subline.
-    ho_by_subline={}
-    for subline,group in raw.groupby("SUBLINI_PRODUCT",dropna=False,sort=False):
-        values=pd.to_numeric(group["TARGET_REKOMENDASI_HO"],errors="coerce").dropna().unique()
-        if len(values)>1:
-            raise ValueError(f"Target HO untuk {subline} berbeda antarbaris: {', '.join(map(str,values[:5]))}.")
-        ho_by_subline[str(subline)]=float(values[0]) if len(values) else 0.0
-        if ho_by_subline[str(subline)]<0:
-            raise ValueError(f"Target HO untuk {subline} tidak boleh bernilai negatif.")
 
     year=int(pd.to_numeric(raw["YEAR_ID"],errors="coerce").dropna().iloc[0]) if "YEAR_ID" in raw and pd.to_numeric(raw["YEAR_ID"],errors="coerce").notna().any() else None
     month=int(pd.to_numeric(raw["MONTH_ID"],errors="coerce").dropna().iloc[0]) if "MONTH_ID" in raw and pd.to_numeric(raw["MONTH_ID"],errors="coerce").notna().any() else None
@@ -1342,18 +1337,41 @@ def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_
         history["_target_principal"]=history[principal_col].astype("string").str.strip().str.casefold()
     else:
         history["_target_principal"]=pd.NA
-    item_by_subline={}
-    principal_by_subline={}
-    for subline,group in raw.groupby("SUBLINI_PRODUCT",sort=False):
-        item_by_subline[str(subline)]=str(group["ITEM_SUBLINI"].dropna().iloc[0]).strip().casefold().removesuffix(".0") if "ITEM_SUBLINI" in group and group["ITEM_SUBLINI"].notna().any() else ""
-        principal_by_subline[str(subline)]=str(group["PRINCIPLE ID"].dropna().iloc[0]).strip().casefold() if "PRINCIPLE ID" in group and group["PRINCIPLE ID"].notna().any() else ""
-    average_by_title={}
-    for subline in ho_by_subline:
+    # A SUBLINI_PRODUCT can contain several items, channels, or territories.
+    # The HO value is repeated for each assigned salesperson, so identify its
+    # source line by every available non-salesperson dimension before allocating.
+    line_columns=[c for c in ["YEAR_ID","MONTH_ID","KODE_CABANG","BISNIS","ITEM_SUBLINI","PRINCIPLE ID","SUBLINI_PRODUCT","CHANNEL_OUTLET_GROUP","TERITORY_GEO_GROUP"] if c in raw.columns]
+    if "SUBLINI_PRODUCT" not in line_columns:
+        line_columns.append("SUBLINI_PRODUCT")
+    line_groups=list(raw.groupby(line_columns,dropna=False,sort=False,observed=True))
+    warnings=[]
+    expected_by_subline={}
+    result_rows=[]
+    for _,group in line_groups:
+        subline=str(group["SUBLINI_PRODUCT"].iloc[0])
+        values=pd.to_numeric(group["TARGET_REKOMENDASI_HO"],errors="coerce").dropna().unique()
+        if not len(values):
+            raise ValueError(f"Target HO kosong untuk {subline}.")
+        # In some source files, HO target values differ by item within one
+        # subline. Item and other source dimensions are separated above. If
+        # duplicates still conflict on the exact same line, take the largest
+        # stated HO value and show a visible warning instead of aborting all work.
+        target=float(max(values))
+        if target<0:
+            raise ValueError(f"Target HO untuk {subline} tidak boleh bernilai negatif.")
+        if len(values)>1:
+            warnings.append(f"{subline} / item {group['ITEM_SUBLINI'].iloc[0] if 'ITEM_SUBLINI' in group else '—'}: nilai HO berbeda pada baris duplikat ({', '.join(f'{float(v):,.0f}' for v in values[:5])}); alokasi memakai nilai tertinggi {target:,.0f}.")
+        expected_by_subline[subline]=expected_by_subline.get(subline,0.0)+target
+
         candidates=history
-        item=item_by_subline.get(subline,""); principal=principal_by_subline.get(subline,"")
-        if item and candidates["_target_item"].notna().any(): candidates=candidates[candidates["_target_item"].eq(item)]
-        elif candidates["_target_subline"].notna().any(): candidates=candidates[candidates["_target_subline"].eq(subline.casefold())]
-        if principal and candidates["_target_principal"].notna().any(): candidates=candidates[candidates["_target_principal"].eq(principal)]
+        item=str(group["ITEM_SUBLINI"].dropna().iloc[0]).strip().casefold().removesuffix(".0") if "ITEM_SUBLINI" in group and group["ITEM_SUBLINI"].notna().any() else ""
+        principal=str(group["PRINCIPLE ID"].dropna().iloc[0]).strip().casefold() if "PRINCIPLE ID" in group and group["PRINCIPLE ID"].notna().any() else ""
+        if item and candidates["_target_item"].notna().any():
+            candidates=candidates[candidates["_target_item"].eq(item)]
+        elif candidates["_target_subline"].notna().any():
+            candidates=candidates[candidates["_target_subline"].eq(subline.casefold())]
+        if principal and candidates["_target_principal"].notna().any():
+            candidates=candidates[candidates["_target_principal"].eq(principal)]
         if average_basis=="Jumlah relasi aktif":
             candidates=candidates[candidates[customer_col].notna()]
             if sales_col:
@@ -1362,19 +1380,14 @@ def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_
         else:
             monthly=candidates.groupby(["_target_title","_target_period"])["_target_metric"].sum()
         if monthly.empty:
-            average_by_title[subline]={}
+            weights={}
         else:
             # Divide by 3, including months with no sales as zero.
             totals=monthly.groupby(level=0).sum()/3.0
-            average_by_title[subline]={str(title):float(value) for title,value in totals.items() if pd.notna(title) and str(title).strip()}
-
-    result_rows=[]
-    for subline,group in raw.groupby("SUBLINI_PRODUCT",sort=False,dropna=False):
-        subline=str(subline); target=ho_by_subline[subline]
+            weights={str(title):float(value) for title,value in totals.items() if pd.notna(title) and str(title).strip()}
         source_titles=group["SALESPERSON_POSITION"].astype("string").fillna("").str.strip().tolist()
         had_blank_title=any(not title for title in source_titles)
         titles=[title for title in source_titles if title]
-        weights=average_by_title.get(subline,{})
         if not titles or had_blank_title:
             titles=list(dict.fromkeys(titles+[title for title,value in weights.items() if value>0]))
         if not titles:
@@ -1401,16 +1414,19 @@ def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_
             row=dict(template)
             row["SALESPERSON_POSITION"]=title
             row["TARGET_CABANG"]=amount
-            row["AVERAGE_3_BULAN"]=float(average_by_title.get(subline,{}).get(title,0.0))
+            row["AVERAGE_3_BULAN"]=float(weights.get(title,0.0))
             row["PORSI_TARGET_%"]=amount/target*100 if target else 0.0
             result_rows.append(row)
     result=pd.DataFrame(result_rows)
-    # Validate exact subline reconciliation to HO target.
+    # Validate that every subline's branch target equals the sum of its
+    # distinct item/source-line HO targets (HO values repeat by sales person).
     check=result.groupby("SUBLINI_PRODUCT")["TARGET_CABANG"].sum()
     for subline,total in check.items():
-        if not math.isclose(float(total),ho_by_subline[str(subline)],rel_tol=0,abs_tol=1e-7):
+        if not math.isclose(float(total),expected_by_subline[str(subline)],rel_tol=0,abs_tol=1e-7):
             raise ArithmeticError(f"Hasil alokasi {subline} tidak sama dengan target HO.")
     result["YEAR_ID"]=year; result["MONTH_ID"]=month
+    result.attrs["breakdown_warnings"]=warnings
+    result.attrs["expected_by_subline"]=expected_by_subline
     return result,year,month,average_basis
 def filter_options(df,kind):
     c=col(df,kind)
@@ -2887,18 +2903,26 @@ if main_section=="Breakdown Target":
                     st.info("File mentah tersimpan pada sesi kerja lokal. Google Drive belum dapat ditulis karena kredensial Drive tidak tersedia.")
                 st.session_state["_breakdown_target_raw_fingerprint"]=_bt_fingerprint
             except Exception as _bt_save_error:
-                st.error(f"File mentah gagal disimpan: {_bt_save_error}")
+                # The local copy is already written before Drive is attempted.
+                # Avoid repeating a red upload error on every Streamlit rerun;
+                # processing and export remain available while access is fixed.
+                st.session_state["_breakdown_target_raw_fingerprint"]=_bt_fingerprint
+                st.warning(f"File mentah tersimpan di workspace aplikasi, tetapi belum tersinkron ke Google Drive: {_bt_save_error}")
     if _bt_source_bytes:
         try:
             _bt_source_df=read_uploaded_file(_bt_source_name,_bt_source_bytes)
             _bt_result,_bt_result_year,_bt_result_month,_bt_used_basis=_prepare_target_breakdown(_bt_source_df,df,ACTIVE_BRANCH_CODE,_bt_basis)
+            for _bt_warning in _bt_result.attrs.get("breakdown_warnings",[]):
+                st.warning(_bt_warning)
             if (_bt_result_year,_bt_result_month)!=(int(_bt_year),int(_bt_month)):
                 st.warning(f"Periode pada file ({_bt_result_month:02d}/{_bt_result_year}) berbeda dari periode pilihan ({int(_bt_month):02d}/{int(_bt_year)}). Nama file ekspor mengikuti periode di dalam file.")
-            _bt_total_ho=float(_bt_result.groupby("SUBLINI_PRODUCT")["TARGET_REKOMENDASI_HO"].first().sum())
+            _bt_expected_by_subline=_bt_result.attrs.get("expected_by_subline",{})
+            _bt_total_ho=float(sum(_bt_expected_by_subline.values()))
             _bt_total_branch=float(_bt_result["TARGET_CABANG"].sum())
             _bt_summary=_bt_result.groupby("SUBLINI_PRODUCT",as_index=False).agg(
-                Target_HO=("TARGET_REKOMENDASI_HO","first"),Target_Cabang=("TARGET_CABANG","sum"),Sales_Person=("SALESPERSON_POSITION","nunique"))
-            _bt_summary=_bt_summary.rename(columns={"Target_HO":"Target HO","Target_Cabang":"Target Cabang","Sales_Person":"Sales Person"})
+                Target_Cabang=("TARGET_CABANG","sum"),Sales_Person=("SALESPERSON_POSITION","nunique"))
+            _bt_ho_summary=pd.DataFrame([{"SUBLINI_PRODUCT":subline,"Target HO":value} for subline,value in _bt_expected_by_subline.items()])
+            _bt_summary=_bt_summary.merge(_bt_ho_summary,on="SUBLINI_PRODUCT",how="left").rename(columns={"Target_Cabang":"Target Cabang","Sales_Person":"Sales Person"})
             _bt_summary["Selisih"]=_bt_summary["Target Cabang"]-_bt_summary["Target HO"]
             _bt_kpis=st.columns(4,gap="small")
             _bt_kpis[0].metric("Total Target HO",f"{_bt_total_ho:,.0f}")
@@ -2915,8 +2939,9 @@ if main_section=="Breakdown Target":
                 "PORSI_TARGET_%":st.column_config.NumberColumn(format="%.2f%%"),
                 "TARGET_CABANG":st.column_config.NumberColumn(format="%,.0f")})
             _bt_buffer=io.BytesIO()
-            _bt_reconciliation=_bt_result.groupby("SUBLINI_PRODUCT",as_index=False).agg(
-                TARGET_REKOMENDASI_HO=("TARGET_REKOMENDASI_HO","first"),TARGET_CABANG=("TARGET_CABANG","sum"))
+            _bt_reconciliation=_bt_result.groupby("SUBLINI_PRODUCT",as_index=False).agg(TARGET_CABANG=("TARGET_CABANG","sum"))
+            _bt_ho_export=pd.DataFrame([{"SUBLINI_PRODUCT":subline,"TARGET_REKOMENDASI_HO":value} for subline,value in _bt_expected_by_subline.items()])
+            _bt_reconciliation=_bt_reconciliation.merge(_bt_ho_export,on="SUBLINI_PRODUCT",how="left")
             with pd.ExcelWriter(_bt_buffer,engine="openpyxl") as _bt_writer:
                 _bt_result.to_excel(_bt_writer,index=False,sheet_name="Breakdown Target")
                 _bt_reconciliation.to_excel(_bt_writer,index=False,sheet_name="Rekonsiliasi")
