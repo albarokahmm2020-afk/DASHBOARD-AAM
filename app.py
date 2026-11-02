@@ -1625,6 +1625,7 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
     if "BUSINESS_GROUP" in allocations.columns: required["business_group"]=cols.get("business_group")
     missing=[name for name,value in required.items() if not value]
     if missing: raise ValueError("Kolom file mentah wajib tidak ditemukan: "+", ".join(missing))
+    source[required["ho_target"]]=pd.to_numeric(source[required["ho_target"]],errors="coerce").fillna(0)
     key_order=["business_group","salesperson","principal","channel"] if "business_group" in required else ["salesperson","principal","channel"]
     key_cols=[required[k] for k in key_order]
     key_names=[{"business_group":"BUSINESS_GROUP","salesperson":"SALESPERSON_POSITION","principal":"PRINCIPLE ID","channel":"CHANNEL_OUTLET_GROUP"}[k] for k in key_order]
