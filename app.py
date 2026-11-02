@@ -1521,13 +1521,14 @@ def _build_breakdown_seller_summary(history_frame, allocations, year, month, sel
         sales_by_period={int(period):float(row["_sales"]) for period,row in seller_months.iterrows()} if not seller_months.empty else {}
         target_by_period={int(period):float(row["_target"]) for period,row in seller_months.iterrows()} if not seller_months.empty else {}
         average=sum(sales_by_period.get(period,0.0) for period in prior)/3
-        row={"Sales Person Title":str(seller),"Avg 3 Month":average}
+        breakdown_target=float(seller_row["_breakdown_target"])
+        row={"Sales Person Title":str(seller),"Avg 3 Month":average,"Hasil Breakdown":breakdown_target,"Adjust Target":0.0,"Total Setelah Adjust":breakdown_target}
         for period in prior:
             month_number=(period%12)+1
             month_name=MONTHS[month_number]
             actual=sales_by_period.get(period,0.0); target=target_by_period.get(period,0.0)
             row[f"A/T {month_name}"]=actual/target*100 if target else None
-        row["Growth vs Avg 3 Month"]=(float(seller_row["_breakdown_target"])/average-1)*100 if average else None
+        row["Growth vs Avg 3 Month"]=(breakdown_target/average-1)*100 if average else None
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -3060,6 +3061,9 @@ if main_section=="Breakdown Target":
                 st.session_state["_bt_manual_period"]=_bt_period_key
                 st.session_state["_bt_manual_targets"]=_bt_principals.copy()
                 st.session_state.pop("_bt_allocations",None)
+                st.session_state.pop("_bt_seller_adjustments",None)
+                st.session_state.pop("bt_seller_summary_adjust",None)
+                st.session_state.pop("bt_adjust_allocations",None)
             st.caption("Tempel dua kolom dari Excel atau Markdown. Kolom pertama = PRINCIPLE ID; kolom kedua = TARGET_REKOMENDASI_HO. ID yang ditempel akan langsung mengisi tabel target.")
             _bt_target_paste=st.text_area("Tempel daftar target per Principal ID",key="bt_principal_target_paste",height=140,placeholder="PRINCIPLE ID\tTARGET_REKOMENDASI_HO\nDEC\t449998\nABI\t189958845")
             if st.button("Masukkan target ke tabel",key="bt_apply_pasted_targets"):
@@ -3077,15 +3081,23 @@ if main_section=="Breakdown Target":
                         _bt_current_targets.at[_bt_index,"TARGET_PRINCIPAL"]=_bt_row["TARGET_PRINCIPAL"]
                     st.session_state["_bt_manual_targets"]=_bt_current_targets.reset_index(drop=True)
                     st.session_state.pop("_bt_allocations",None)
+                    st.session_state.pop("_bt_seller_adjustments",None)
+                    st.session_state.pop("bt_seller_summary_adjust",None)
+                    st.session_state.pop("bt_adjust_allocations",None)
                     st.session_state.pop("bt_manual_targets_editor",None)
                     st.success(f"{len(_bt_pasted_targets):,} Principal ID dimasukkan ke tabel target.")
                 except Exception as _bt_paste_err:
                     st.error(f"Daftar target gagal dibaca: {_bt_paste_err}")
             _bt_targets=st.data_editor(st.session_state.get("_bt_manual_targets",_bt_principals),key="bt_manual_targets_editor",hide_index=True,width="stretch",height=360,num_rows="fixed",disabled=["PRINCIPLE ID","PRINCIPAL_NAME"],column_config={"TARGET_PRINCIPAL":st.column_config.NumberColumn("Target bulan berjalan",min_value=0,step=1000,format="%,.0f")})
             st.session_state["_bt_manual_targets"]=_bt_targets
+            _bt_input_total=float(pd.to_numeric(_bt_targets["TARGET_PRINCIPAL"],errors="coerce").fillna(0).sum())
+            st.metric("Total target Principal ID",f"{_bt_input_total:,.0f}")
             if st.button("Buat breakdown per Sales Person dan Channel",key="bt_generate_allocations",type="primary"):
                 try:
                     st.session_state["_bt_allocations"]=_prepare_principal_channel_breakdown(_bt_scope,int(_bt_year),int(_bt_month),_bt_targets,_bt_basis,_bt_selected_bg)
+                    st.session_state["_bt_seller_adjustments"]={}
+                    st.session_state.pop("bt_seller_summary_adjust",None)
+                    st.session_state.pop("bt_adjust_allocations",None)
                     _bt_skipped_history=st.session_state["_bt_allocations"].attrs.get("skipped_no_history",[])
                     _bt_skipped_weight=st.session_state["_bt_allocations"].attrs.get("skipped_no_weight",[])
                     st.success("Breakdown siap disesuaikan.")
@@ -3095,6 +3107,7 @@ if main_section=="Breakdown Target":
                 except Exception as _bt_err: st.error(f"Breakdown gagal: {_bt_err}")
             if st.session_state.get("_bt_allocations") is not None:
                 _bt_alloc=st.session_state["_bt_allocations"].copy()
+                _bt_alloc=_bt_alloc.drop(columns=["ADJUST_TARGET_SALESPERSON"],errors="ignore")
                 if _bt_alloc.empty:
                     st.info("Tidak ada Principal ID yang memiliki riwayat 3 bulan untuk dibreakdown. Isi target yang memiliki riwayat agar hasil bisa diteruskan ke file mentah.")
                 else:
@@ -3104,9 +3117,36 @@ if main_section=="Breakdown Target":
                     _bt_summary=_build_breakdown_seller_summary(_bt_scope,_bt_edited,int(_bt_year),int(_bt_month),_bt_selected_bg)
                     st.markdown("#### Summary hasil breakdown per Sales Person Title")
                     st.caption("A/T = actual ÷ target untuk tiga bulan sebelum bulan target. Growth = target hasil breakdown dibanding Avg 3 Month.")
-                    _bt_summary_config={column:st.column_config.NumberColumn(column,format="%,.0f") for column in _bt_summary.columns if column=="Avg 3 Month"}
+                    _bt_seller_adjustments=st.session_state.get("_bt_seller_adjustments",{})
+                    _bt_summary["Adjust Target"]=_bt_summary["Sales Person Title"].map(_bt_seller_adjustments).fillna(0.0)
+                    _bt_summary["Total Setelah Adjust"]=_bt_summary["Hasil Breakdown"]+_bt_summary["Adjust Target"]
+                    _bt_summary["Growth vs Avg 3 Month"]=((_bt_summary["Total Setelah Adjust"]/_bt_summary["Avg 3 Month"]-1)*100).where(_bt_summary["Avg 3 Month"]>0)
+                    _bt_summary_columns=["Sales Person Title","Avg 3 Month","Hasil Breakdown",*[column for column in _bt_summary.columns if column.startswith("A/T ")],"Growth vs Avg 3 Month","Adjust Target","Total Setelah Adjust"]
+                    _bt_summary=_bt_summary[_bt_summary_columns]
+                    _bt_summary_config={column:st.column_config.NumberColumn(column,format="%,.0f") for column in ["Avg 3 Month","Hasil Breakdown","Adjust Target","Total Setelah Adjust"]}
                     _bt_summary_config.update({column:st.column_config.NumberColumn(column,format="%.1f%%") for column in _bt_summary.columns if column.startswith("A/T ") or column=="Growth vs Avg 3 Month"})
-                    st.dataframe(_bt_summary,width="stretch",height=300,hide_index=True,column_config=_bt_summary_config)
+                    _bt_summary_edited=st.data_editor(_bt_summary,key="bt_seller_summary_adjust",hide_index=True,width="stretch",height=300,num_rows="fixed",disabled=[column for column in _bt_summary.columns if column!="Adjust Target"],column_config=_bt_summary_config)
+                    _bt_seller_adjustments={}
+                    for _,_bt_summary_row in _bt_summary_edited.iterrows():
+                        _bt_adjust_value=pd.to_numeric(_bt_summary_row["Adjust Target"],errors="coerce")
+                        _bt_seller_adjustments[str(_bt_summary_row["Sales Person Title"])]=0.0 if pd.isna(_bt_adjust_value) else float(_bt_adjust_value)
+                    st.session_state["_bt_seller_adjustments"]=_bt_seller_adjustments
+                    _bt_edited["ADJUST_TARGET_SALESPERSON"]=0.0
+                    for _bt_seller,_bt_adjust in _bt_seller_adjustments.items():
+                        _bt_mask=_bt_edited["SALESPERSON_POSITION"].astype(str).eq(_bt_seller)
+                        if not _bt_mask.any() or not _bt_adjust:
+                            continue
+                        _bt_weights=pd.to_numeric(_bt_edited.loc[_bt_mask,"TARGET_BREAKDOWN"],errors="coerce").fillna(0).clip(lower=0)
+                        _bt_weight_total=float(_bt_weights.sum())
+                        _bt_shares=_bt_weights/_bt_weight_total if _bt_weight_total>0 else pd.Series(1/len(_bt_weights),index=_bt_weights.index)
+                        _bt_edited.loc[_bt_mask,"ADJUST_TARGET_SALESPERSON"]=_bt_adjust*_bt_shares
+                    _bt_edited["TARGET_CABANG"]=pd.to_numeric(_bt_edited["TARGET_BREAKDOWN"],errors="coerce").fillna(0)+pd.to_numeric(_bt_edited["ADJUST_TARGET"],errors="coerce").fillna(0)+_bt_edited["ADJUST_TARGET_SALESPERSON"]
+                    st.session_state["_bt_allocations"]=_bt_edited
+                    _bt_total_cols=st.columns(4)
+                    _bt_total_cols[0].metric("Total hasil breakdown",f"{_bt_summary['Hasil Breakdown'].sum():,.0f}")
+                    _bt_total_cols[1].metric("Total adjust",f"{_bt_summary['Adjust Target'].sum():,.0f}")
+                    _bt_total_cols[2].metric("Total setelah adjust",f"{_bt_summary['Total Setelah Adjust'].sum():,.0f}")
+                    _bt_total_cols[3].metric("Selisih dari target input",f"{_bt_input_total-_bt_summary['Total Setelah Adjust'].sum():,.0f}")
                     st.markdown("#### Breakdown per Sales Person Title · Principal ID · Channel Outlet Group")
                     st.dataframe(_bt_edited,width="stretch",height=440,hide_index=True)
     with _bt_tabs[1]:
