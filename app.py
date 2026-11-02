@@ -842,9 +842,6 @@ BRANCH_OPTIONS={"BDG":"Bandung","PTK":"Pontianak","MDN":"Medan"}
 DEFAULT_DRIVE_DATABASE_FOLDER_ID="1Ef0DsWdqJ-fy7ahuQ0NR3H1dO2QkHk4b"
 DEFAULT_DRIVE_STORAGE_FOLDER_ID=DEFAULT_DRIVE_DATABASE_FOLDER_ID
 LEGACY_DEFAULT_DRIVE_STORAGE_FOLDER_ID="1E88RgFi_zTHzsJZzD0RVztdcS5Wecc6e"
-class _DriveStorageFolderNotSharedDriveError(RuntimeError):
-    pass
-
 def _drive_service_credentials():
     """Build credentials with write access limited by the service account's Drive sharing."""
     from google.oauth2.service_account import Credentials
@@ -872,7 +869,7 @@ def _drive_folder_id(folder_name, parent_id):
     return response.json()["id"]
 
 def _drive_storage_folder(category, branch=None):
-    """Return/create a folder under a writable folder in a Shared Drive."""
+    """Return/create a folder under an accessible, writable Google Drive folder."""
     from google.auth.transport.requests import AuthorizedSession
     drive_settings=st.secrets.get("google_drive",{})
     configured_root=drive_settings.get("storage_folder_id")
@@ -886,9 +883,9 @@ def _drive_storage_folder(category, branch=None):
         if candidate and candidate not in root_candidates and candidate!=LEGACY_DEFAULT_DRIVE_STORAGE_FOLDER_ID:
             root_candidates.append(candidate)
     if not root_candidates:
-        raise RuntimeError("Sinkronisasi perlu Shared Drive. Atur [google_drive].storage_folder_id ke ID folder tujuan di Shared Drive.")
+        raise RuntimeError("Folder penyimpanan Google Drive belum dikonfigurasi. Atur [google_drive].storage_folder_id ke ID folder dashboard.")
     session=AuthorizedSession(_drive_service_credentials())
-    def shared_drive_folder(folder_id):
+    def accessible_folder(folder_id):
         response=session.get(
             f"https://www.googleapis.com/drive/v3/files/{folder_id}",
             params={"fields":"id,name,mimeType,driveId,capabilities(canAddChildren)","supportsAllDrives":"true"},
@@ -898,30 +895,28 @@ def _drive_storage_folder(category, branch=None):
             return None
         response.raise_for_status()
         item=response.json()
-        return item if item.get("mimeType")=="application/vnd.google-apps.folder" and item.get("driveId") else None
+        return item if item.get("mimeType")=="application/vnd.google-apps.folder" else None
 
-    root=None; root_id=None; readable_shared_drive=False
+    root=None; root_id=None; readable_folder=False
     for candidate in root_candidates:
-        candidate_root=shared_drive_folder(candidate)
+        candidate_root=accessible_folder(candidate)
         if candidate_root is None:
             continue
-        readable_shared_drive=True
+        readable_folder=True
         if candidate_root.get("capabilities",{}).get("canAddChildren") is False:
             continue
         root_id=candidate; root=candidate_root; break
     if root is None:
-        if readable_shared_drive:
-            raise RuntimeError("Akun layanan dapat melihat Shared Drive tetapi tidak dapat membuat file di folder tujuan. Berikan peran Kontributor/Pengelola Konten pada folder storage_folder_id atau database_folder_id.")
-        raise _DriveStorageFolderNotSharedDriveError(
-            "Folder penyimpanan Google Drive tidak dapat diakses sebagai folder Shared Drive. "
-            "Periksa storage_folder_id dan database_folder_id serta bagikan folder Shared Drive kepada akun layanan dashboard."
-        )
+        if readable_folder:
+            raise RuntimeError("Akun layanan dapat melihat folder Google Drive, tetapi tidak dapat membuat subfolder di sana. Berikan akses Editor pada folder storage_folder_id atau database_folder_id.")
+        raise RuntimeError("Folder penyimpanan Google Drive tidak dapat diakses sebagai folder. Periksa storage_folder_id/database_folder_id dan pastikan folder dibagikan kepada akun layanan dashboard.")
     folder_id=_drive_folder_id("Dashboard_Data" if category!="exports" else "Dashboard_Exports",root_id)
     if branch:
         folder_id=_drive_folder_id(str(branch),folder_id)
     if category not in ("", "exports"):
         folder_id=_drive_folder_id(str(category),folder_id)
     return folder_id
+
 
 def _drive_upload_bytes(file_name,payload,mime_type="application/octet-stream",category="exports",branch=None):
     """Create or replace a file in the shared Drive folder."""
@@ -1139,12 +1134,10 @@ def _restore_drive_state():
             payload.raise_for_status()
             (PROGRAM_TARGET_DIR/item["name"]).write_bytes(payload.content)
         st.session_state["_drive_state_restored_branch"]=ACTIVE_BRANCH_CODE
-    except _DriveStorageFolderNotSharedDriveError:
-        # Optional Drive restoration is skipped; local files and MongoDB remain available.
-        st.session_state["_drive_state_restore_skipped_branch"]=ACTIVE_BRANCH_CODE
     except Exception as exc:
         st.warning(f"Tidak dapat memuat file simpanan dari Google Drive: {exc}")
 _restore_drive_state()
+
 def load_settings():
     try: return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError): return {}
@@ -2930,6 +2923,9 @@ if main_section=="Breakdown Target":
                 # processing and export remain available while access is fixed.
                 st.session_state["_breakdown_target_raw_fingerprint"]=_bt_fingerprint
                 st.warning(f"File mentah tersimpan di workspace aplikasi, tetapi belum tersinkron ke Google Drive: {_bt_save_error}")
+                if st.button("Coba simpan ulang ke Google Drive",key=f"retry_breakdown_target_drive_{_bt_file_year}_{_bt_file_month}"):
+                    st.session_state.pop("_breakdown_target_raw_fingerprint",None)
+                    st.rerun()
     if _bt_source_bytes:
         try:
             _bt_source_df=read_uploaded_file(_bt_source_name,_bt_source_bytes)
