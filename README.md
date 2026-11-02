@@ -29,3 +29,9 @@ storage_folder_id = "ID_FOLDER_SHARED_DRIVE"
 ```
 
 `storage_folder_id` adalah ID folder tujuan di dalam Shared Drive, bukan URL atau ID Shared Drive. Nilai ini merupakan pengaturan terpisah dari `database_folder_id`, walau keduanya boleh memakai folder root yang sama karena aplikasi menyimpan file operasional di subfolder khusus. Jika `storage_folder_id` di Streamlit Secrets menunjuk ke ID default lama `1E88RgFi_zTHzsJZzD0RVztdcS5Wecc6e`, atau ID khusus yang tidak valid/tidak bisa diakses, aplikasi otomatis mencoba folder default di atas. Pastikan akun layanan punya izin menambah file di folder default. Jangan masukkan kredensial akun layanan ke repository.
+
+## Breakdown Target bulanan
+
+Buka **Navigasi utama → Breakdown Target**, lalu unggah workbook target bulanan. Kolom input mengikuti template seperti `MENTAHAN UPLOAD TARGET.xlsx`, terutama `YEAR_ID`, `MONTH_ID`, `SUBLINI_PRODUCT`, `ITEM_SUBLINI`, `SALESPERSON_POSITION`, dan `TARGET_REKOMENDASI_HO`. Sistem membagi target HO per sublini ke sales person berdasarkan rata-rata tiga bulan kalender lengkap sebelumnya. Dasar pembagian bisa berupa Sales Value Gross atau jumlah relasi aktif. Untuk baris tanpa sales person, nama sales person yang memiliki data historis untuk produk itu ditambahkan otomatis.
+
+`TARGET_CABANG` hasil ekspor direkonsiliasi per `SUBLINI_PRODUCT` agar totalnya sama dengan satu target HO (nilai HO yang berulang pada baris mentah tidak dijumlahkan berulang). File mentah disimpan di Shared Drive pada `Dashboard_Data/<CABANG>/target_breakdown/`; hasil terbitan disimpan pada `Dashboard_Exports/<CABANG>/`. Gunakan **Muat file mentah yang tersimpan di Google Drive** untuk membuka ulang file berdasarkan cabang dan periode.
