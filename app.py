@@ -3098,7 +3098,7 @@ if main_section=="Breakdown Target":
                 if _bt_alloc.empty:
                     st.info("Tidak ada Principal ID yang memiliki riwayat 3 bulan untuk dibreakdown. Isi target yang memiliki riwayat agar hasil bisa diteruskan ke file mentah.")
                 else:
-                    _bt_edited=st.data_editor(_bt_alloc,key="bt_adjust_allocations",hide_index=True,width="stretch",height=440,disabled=[c for c in _bt_alloc.columns if c!="ADJUST_TARGET"],column_config={"ADJUST_TARGET":st.column_config.NumberColumn("Adjust Target",step=1000,format="%,.0f")})
+                    _bt_edited=st.data_editor(_bt_alloc,key="bt_adjust_allocations",hide_index=True,width="stretch",height=440,disabled=[c for c in _bt_alloc.columns if c!="ADJUST_TARGET"],column_config={"ADJUST_TARGET":st.column_config.NumberColumn("Adjust Target",step=1000,format="%,.0f"),"KONTRIBUSI_SALESPERSON_%":st.column_config.NumberColumn("Kontribusi Sales Person (%)",format="%.1f%%"),"TARGET_SALESPERSON":st.column_config.NumberColumn("Target Sales Person",format="%,.0f"),"KONTRIBUSI_CHANNEL_%":st.column_config.NumberColumn("Kontribusi Channel (%)",format="%.1f%%")})
                     _bt_edited["TARGET_CABANG"]=pd.to_numeric(_bt_edited["TARGET_BREAKDOWN"],errors="coerce").fillna(0)+pd.to_numeric(_bt_edited["ADJUST_TARGET"],errors="coerce").fillna(0)
                     st.session_state["_bt_allocations"]=_bt_edited
                     _bt_summary=_build_breakdown_seller_summary(_bt_scope,_bt_edited,int(_bt_year),int(_bt_month),_bt_selected_bg)
