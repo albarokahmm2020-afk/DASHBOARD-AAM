@@ -1473,20 +1473,27 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     hist=hist[hist["_pid"].notna()&hist["_seller"].notna()&hist["_channel"].notna()].copy()
     if average_basis=="Sales Value Gross": hist["_weight"]=pd.to_numeric(hist[sales_col],errors="coerce").fillna(0).clip(lower=0)
     else: hist["_weight"]=hist[customer_col].astype("string").str.strip().where(hist[customer_col].notna(),pd.NA)
-    rows=[]
+    rows=[]; skipped_no_history=[]; skipped_no_weight=[]
     for _,target in principal_targets.iterrows():
         pid=str(target["PRINCIPLE ID"]).strip(); total=float(pd.to_numeric(target["TARGET_PRINCIPAL"],errors="coerce") or 0)
         if not pid or total<0: continue
         subset=hist[hist["_pid"].str.casefold().eq(pid.casefold())]
-        if subset.empty: raise ValueError(f"Tidak ada riwayat 3 bulan untuk Principal ID {pid}.")
+        if subset.empty:
+            skipped_no_history.append(pid)
+            continue
         if average_basis=="Sales Value Gross": weights=subset.groupby(["_seller","_channel"],observed=True)["_weight"].sum()
         else: weights=subset.groupby(["_seller","_channel"],observed=True)["_weight"].nunique()
         weights=weights.clip(lower=0); denom=float(weights.sum())
-        if denom<=0: raise ValueError(f"Bobot riwayat kosong untuk Principal ID {pid}.")
+        if denom<=0:
+            skipped_no_weight.append(pid)
+            continue
         for (seller,channel),weight in weights.items():
             base=total*float(weight)/denom
             rows.append({"BUSINESS_GROUP":str(selected_business_group or (hist[business_col].dropna().iloc[0] if business_col and hist[business_col].notna().any() else "")),"PRINCIPLE ID":pid,"PRINCIPAL_NAME":str(target.get("PRINCIPAL_NAME",pid)),"SALESPERSON_POSITION":seller,"CHANNEL_OUTLET_GROUP":channel,"TARGET_PRINCIPAL":total,"AVERAGE_3_BULAN":float(weight)/3,"PORSI_%":float(weight)/denom*100,"TARGET_BREAKDOWN":base,"ADJUST_TARGET":0.0,"TARGET_CABANG":base})
-    return pd.DataFrame(rows)
+    result=pd.DataFrame(rows,columns=["BUSINESS_GROUP","PRINCIPLE ID","PRINCIPAL_NAME","SALESPERSON_POSITION","CHANNEL_OUTLET_GROUP","TARGET_PRINCIPAL","AVERAGE_3_BULAN","PORSI_%","TARGET_BREAKDOWN","ADJUST_TARGET","TARGET_CABANG"])
+    result.attrs["skipped_no_history"]=skipped_no_history
+    result.attrs["skipped_no_weight"]=skipped_no_weight
+    return result
 
 def _apply_principal_breakdown_to_raw(raw_frame, allocations):
     """Write adjusted seller × Principal × channel allocations into raw TARGET_CABANG rows."""
@@ -2967,18 +2974,26 @@ if main_section=="Breakdown Target":
             if st.button("Buat breakdown per Sales Person dan Channel",key="bt_generate_allocations",type="primary"):
                 try:
                     st.session_state["_bt_allocations"]=_prepare_principal_channel_breakdown(_bt_scope,int(_bt_year),int(_bt_month),_bt_targets,_bt_basis,_bt_selected_bg)
+                    _bt_skipped_history=st.session_state["_bt_allocations"].attrs.get("skipped_no_history",[])
+                    _bt_skipped_weight=st.session_state["_bt_allocations"].attrs.get("skipped_no_weight",[])
                     st.success("Breakdown siap disesuaikan.")
+                    if _bt_skipped_history or _bt_skipped_weight:
+                        _bt_skipped_ids=sorted(set(_bt_skipped_history+_bt_skipped_weight))
+                        st.warning(f"{len(_bt_skipped_ids):,} Principal ID dilewati karena tidak memiliki riwayat atau bobot 3 bulan: {', '.join(_bt_skipped_ids[:20])}{'…' if len(_bt_skipped_ids)>20 else ''}. Principal lain tetap diproses.")
                 except Exception as _bt_err: st.error(f"Breakdown gagal: {_bt_err}")
             if st.session_state.get("_bt_allocations") is not None:
                 _bt_alloc=st.session_state["_bt_allocations"].copy()
-                _bt_edited=st.data_editor(_bt_alloc,key="bt_adjust_allocations",hide_index=True,width="stretch",disabled=[c for c in _bt_alloc.columns if c!="ADJUST_TARGET"],column_config={"ADJUST_TARGET":st.column_config.NumberColumn("Adjust Target",step=1000,format="%,.0f")})
-                _bt_edited["TARGET_CABANG"]=pd.to_numeric(_bt_edited["TARGET_BREAKDOWN"],errors="coerce").fillna(0)+pd.to_numeric(_bt_edited["ADJUST_TARGET"],errors="coerce").fillna(0)
-                st.session_state["_bt_allocations"]=_bt_edited
-                st.markdown("#### Breakdown per Sales Person Title · Principal ID · Channel Outlet Group")
-                st.dataframe(_bt_edited,width="stretch",hide_index=True)
+                if _bt_alloc.empty:
+                    st.info("Tidak ada Principal ID yang memiliki riwayat 3 bulan untuk dibreakdown. Isi target yang memiliki riwayat agar hasil bisa diteruskan ke file mentah.")
+                else:
+                    _bt_edited=st.data_editor(_bt_alloc,key="bt_adjust_allocations",hide_index=True,width="stretch",disabled=[c for c in _bt_alloc.columns if c!="ADJUST_TARGET"],column_config={"ADJUST_TARGET":st.column_config.NumberColumn("Adjust Target",step=1000,format="%,.0f")})
+                    _bt_edited["TARGET_CABANG"]=pd.to_numeric(_bt_edited["TARGET_BREAKDOWN"],errors="coerce").fillna(0)+pd.to_numeric(_bt_edited["ADJUST_TARGET"],errors="coerce").fillna(0)
+                    st.session_state["_bt_allocations"]=_bt_edited
+                    st.markdown("#### Breakdown per Sales Person Title · Principal ID · Channel Outlet Group")
+                    st.dataframe(_bt_edited,width="stretch",hide_index=True)
     with _bt_tabs[1]:
         _bt_raw_upload=st.file_uploader("Unggah file mentah target (.xlsx)",type=["xlsx"],key="bt_raw_target_upload",help="TARGET_CABANG akan diisi dari breakdown tahap 1, dicocokkan menurut Sales Person Title, Principal ID, dan Channel Outlet Group.")
-        if st.session_state.get("_bt_allocations") is None:
+        if st.session_state.get("_bt_allocations") is None or st.session_state["_bt_allocations"].empty:
             st.info("Selesaikan breakdown tahap 1 terlebih dahulu.")
         elif _bt_raw_upload is not None:
             try:
