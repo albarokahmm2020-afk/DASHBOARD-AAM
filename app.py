@@ -3032,7 +3032,7 @@ if main_section=="Breakdown Target":
                     st.success(f"{len(_bt_pasted_targets):,} Principal ID dimasukkan ke tabel target.")
                 except Exception as _bt_paste_err:
                     st.error(f"Daftar target gagal dibaca: {_bt_paste_err}")
-            _bt_targets=st.data_editor(st.session_state.get("_bt_manual_targets",_bt_principals),key="bt_manual_targets_editor",hide_index=True,width="stretch",num_rows="fixed",disabled=["PRINCIPLE ID","PRINCIPAL_NAME"],column_config={"TARGET_PRINCIPAL":st.column_config.NumberColumn("Target bulan berjalan",min_value=0,step=1000,format="%,.0f")})
+            _bt_targets=st.data_editor(st.session_state.get("_bt_manual_targets",_bt_principals),key="bt_manual_targets_editor",hide_index=True,width="stretch",height=360,num_rows="fixed",disabled=["PRINCIPLE ID","PRINCIPAL_NAME"],column_config={"TARGET_PRINCIPAL":st.column_config.NumberColumn("Target bulan berjalan",min_value=0,step=1000,format="%,.0f")})
             st.session_state["_bt_manual_targets"]=_bt_targets
             if st.button("Buat breakdown per Sales Person dan Channel",key="bt_generate_allocations",type="primary"):
                 try:
@@ -3049,11 +3049,11 @@ if main_section=="Breakdown Target":
                 if _bt_alloc.empty:
                     st.info("Tidak ada Principal ID yang memiliki riwayat 3 bulan untuk dibreakdown. Isi target yang memiliki riwayat agar hasil bisa diteruskan ke file mentah.")
                 else:
-                    _bt_edited=st.data_editor(_bt_alloc,key="bt_adjust_allocations",hide_index=True,width="stretch",disabled=[c for c in _bt_alloc.columns if c!="ADJUST_TARGET"],column_config={"ADJUST_TARGET":st.column_config.NumberColumn("Adjust Target",step=1000,format="%,.0f")})
+                    _bt_edited=st.data_editor(_bt_alloc,key="bt_adjust_allocations",hide_index=True,width="stretch",height=440,disabled=[c for c in _bt_alloc.columns if c!="ADJUST_TARGET"],column_config={"ADJUST_TARGET":st.column_config.NumberColumn("Adjust Target",step=1000,format="%,.0f")})
                     _bt_edited["TARGET_CABANG"]=pd.to_numeric(_bt_edited["TARGET_BREAKDOWN"],errors="coerce").fillna(0)+pd.to_numeric(_bt_edited["ADJUST_TARGET"],errors="coerce").fillna(0)
                     st.session_state["_bt_allocations"]=_bt_edited
                     st.markdown("#### Breakdown per Sales Person Title · Principal ID · Channel Outlet Group")
-                    st.dataframe(_bt_edited,width="stretch",hide_index=True)
+                    st.dataframe(_bt_edited,width="stretch",height=440,hide_index=True)
     with _bt_tabs[1]:
         _bt_raw_upload=st.file_uploader("Unggah file mentah target (.xlsx)",type=["xlsx"],key="bt_raw_target_upload",help="TARGET_CABANG akan diisi dari breakdown tahap 1, dicocokkan menurut Sales Person Title, Principal ID, dan Channel Outlet Group.")
         if st.session_state.get("_bt_allocations") is None or st.session_state["_bt_allocations"].empty:
@@ -3063,7 +3063,7 @@ if main_section=="Breakdown Target":
                 _bt_raw_bytes=_bt_raw_upload.getvalue()
                 _bt_raw_df=read_uploaded_file(_bt_raw_upload.name,_bt_raw_bytes)
                 _bt_final=_apply_principal_breakdown_to_raw(_bt_raw_df,st.session_state["_bt_allocations"])
-                st.dataframe(_bt_final,width="stretch",hide_index=True)
+                st.dataframe(_bt_final,width="stretch",height=460,hide_index=True)
                 _bt_out=io.BytesIO()
                 _bt_sheet=pd.ExcelFile(io.BytesIO(_bt_raw_bytes)).sheet_names[0]
                 with pd.ExcelWriter(_bt_out,engine="openpyxl") as _bt_writer:
