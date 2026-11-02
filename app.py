@@ -1537,39 +1537,78 @@ def _allocate_integer_capped(total, weights, capacities):
     return pd.Series(result,index=labels,dtype="int64")
 
 def _normalize_principal_target_allocations(allocations, seller_adjustments=None):
-    """Apply row and seller adjustments as weights while preserving each Principal total."""
+    """Apply exact seller-total adjustments while preserving every Principal total."""
     result=allocations.copy()
     base=pd.to_numeric(result["TARGET_BREAKDOWN"],errors="coerce").fillna(0).round().clip(lower=0).astype("int64")
     row_adjust=pd.to_numeric(result["ADJUST_TARGET"],errors="coerce").fillna(0).round().astype("int64")
-    result["TARGET_BREAKDOWN"]=base
-    result["ADJUST_TARGET"]=row_adjust
-    result["ADJUST_TARGET_SALESPERSON"]=0.0
-    for seller,adjustment in (seller_adjustments or {}).items():
-        mask=result["SALESPERSON_POSITION"].astype(str).eq(str(seller))
-        if not mask.any() or not adjustment:
-            continue
-        weights=base.loc[mask]
-        weight_total=float(weights.sum())
-        result.loc[mask,"ADJUST_TARGET_SALESPERSON"]=_allocate_integer_amount(adjustment,weights)
-    provisional=base+row_adjust+pd.to_numeric(result["ADJUST_TARGET_SALESPERSON"],errors="coerce").fillna(0)
-    result["TARGET_CABANG"]=0.0
+    result["TARGET_BREAKDOWN"]=base; result["ADJUST_TARGET"]=row_adjust
+    provisional=(base+row_adjust).clip(lower=0)
+    result["TARGET_CABANG"]=0
     if "TARGET_SALESPERSON" in result.columns:
         result["TARGET_SALESPERSON"]=pd.to_numeric(result["TARGET_SALESPERSON"],errors="coerce").fillna(0).round().astype("int64")
-    group_columns=[column for column in ["BUSINESS_GROUP","PRINCIPLE ID"] if column in result.columns]
-    for _,indices in result.groupby(group_columns,dropna=False,sort=False).groups.items():
-        target_values=pd.to_numeric(result.loc[indices,"TARGET_PRINCIPAL"],errors="coerce").fillna(0)
-        target_total=int(math.floor(abs(float(target_values.iloc[0]))+0.5))*(1 if not target_values.empty and float(target_values.iloc[0])>=0 else -1) if not target_values.empty else 0
-        result.loc[indices,"TARGET_PRINCIPAL"]=target_total
-        weights=provisional.loc[indices].clip(lower=0)
+    pid_cols=[column for column in ["BUSINESS_GROUP","PRINCIPLE ID"] if column in result.columns]
+    seller_values=result["SALESPERSON_POSITION"].astype(str)
+    sellers=list(dict.fromkeys(seller_values.tolist()))
+    base_seller=base.groupby(seller_values).sum().reindex(sellers,fill_value=0).astype("int64")
+    requested={seller:int(math.floor(abs(float(value))+0.5))*(1 if float(value)>=0 else -1) for seller,value in (seller_adjustments or {}).items()}
+    desired=base_seller.copy()
+    for seller,adjustment in requested.items():
+        if seller in desired.index: desired.loc[seller]+=adjustment
+    negative=desired[desired<0]
+    if not negative.empty:
+        raise ValueError("Adjust Target melebihi target tersedia untuk: "+", ".join(negative.index.tolist()))
+    groups=list(result.groupby(pid_cols,dropna=False,sort=False).groups.items())
+    principal_totals={}
+    for pid,indices in groups:
+        vals=pd.to_numeric(result.loc[indices,"TARGET_PRINCIPAL"],errors="coerce").fillna(0)
+        principal_totals[pid]=int(math.floor(abs(float(vals.iloc[0]))+0.5)) if not vals.empty else 0
+    grand_total=sum(principal_totals.values())
+    difference=grand_total-int(desired.sum())
+    balancing=[seller for seller in sellers if not requested.get(seller,0) and int(base_seller.get(seller,0))>0]
+    if difference and not balancing:
+        raise ValueError("Total Adjust Target harus seimbang agar total TARGET_CABANG tetap sama dengan TARGET_REKOMENDASI_HO.")
+    if difference>0:
+        shares=_allocate_integer_amount(difference,base_seller.reindex(balancing,fill_value=0))
+        for seller,amount in shares.items(): desired.loc[seller]+=int(amount)
+    elif difference<0:
+        reduce_total=-difference
+        capacities=[int(desired.loc[seller]) for seller in balancing]
+        reductions=_allocate_integer_capped(reduce_total,base_seller.reindex(balancing,fill_value=0),capacities)
+        for seller,amount in reductions.items(): desired.loc[seller]-=int(amount)
+    remaining=desired.astype("int64").to_dict()
+    # Assign restrictive Principals first; each seller's final total stays exact.
+    ordered=sorted(groups,key=lambda entry:len(set(seller_values.loc[entry[1]])))
+    principal_seller={}
+    for pid,indices in ordered:
+        total=principal_totals[pid]
+        seller_weights=provisional.loc[indices].groupby(seller_values.loc[indices]).sum()
+        available=list(seller_weights.index)
+        weights=pd.Series([float(seller_weights.get(seller,0)) for seller in sellers],index=range(len(sellers)))
         if float(weights.sum())<=0:
-            weights=base.loc[indices]
+            weights=pd.Series([float(base.loc[indices][seller_values.loc[indices].eq(seller)].sum()) for seller in sellers],index=range(len(sellers)))
         if float(weights.sum())<=0:
-            weights=pd.Series(1.0,index=indices)
-        result.loc[indices,"TARGET_CABANG"]=_allocate_integer_amount(target_total,weights)
-    result["ADJUST_TARGET_SALESPERSON"]=pd.to_numeric(result["ADJUST_TARGET_SALESPERSON"],errors="coerce").fillna(0).round().astype("int64")
+            weights=pd.Series([1.0 if seller in available else 0.0 for seller in sellers],index=range(len(sellers)))
+        capacities=[remaining[seller] if seller in available else 0 for seller in sellers]
+        seller_shares=_allocate_integer_capped(total,weights,capacities)
+        principal_seller[pid]={seller:int(seller_shares.iloc[index]) for index,seller in enumerate(sellers) if int(seller_shares.iloc[index])>0 or seller in available}
+        for seller,amount in principal_seller[pid].items(): remaining[seller]-=amount
+    unallocated={seller:amount for seller,amount in remaining.items() if amount}
+    if unallocated:
+        raise ValueError("Adjust Target tidak dapat dialokasikan ke Principal ID yang punya riwayat: "+", ".join(f"{seller} {amount:+,}" for seller,amount in list(unallocated.items())[:10]))
+    for pid,indices in groups:
+        row_sellers=seller_values.loc[indices]
+        for seller,target_total in principal_seller.get(pid,{}).items():
+            row_indices=list(indices[row_sellers.eq(seller)])
+            if not row_indices: continue
+            if "TARGET_SALESPERSON" in result.columns:
+                result.loc[row_indices,"TARGET_SALESPERSON"]=target_total
+            weights=provisional.loc[row_indices]
+            if float(weights.sum())<=0: weights=base.loc[row_indices]
+            if float(weights.sum())<=0: weights=pd.Series(1.0,index=row_indices)
+            result.loc[row_indices,"TARGET_CABANG"]=_allocate_integer_amount(target_total,weights)
+    result["ADJUST_TARGET_SALESPERSON"]=(pd.to_numeric(result["TARGET_CABANG"],errors="coerce").fillna(0)-base).astype("int64")
     for column in ["TARGET_PRINCIPAL","TARGET_BREAKDOWN","ADJUST_TARGET","TARGET_SALESPERSON","TARGET_CABANG"]:
-        if column in result.columns:
-            result[column]=pd.to_numeric(result[column],errors="coerce").fillna(0).round().astype("int64")
+        if column in result.columns: result[column]=pd.to_numeric(result[column],errors="coerce").fillna(0).round().astype("int64")
     return result
 
 def _build_breakdown_seller_summary(history_frame, allocations, year, month, selected_business_group=None):
@@ -1679,7 +1718,7 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     return result
 
 def _apply_principal_breakdown_to_raw(raw_frame, allocations):
-    """Apply Step 1 at row level; HO and branch targets stay exactly equal."""
+    """Apply Step 1 to branch targets while preserving every raw HO target."""
     source=raw_frame.copy(); cols=_breakdown_target_columns(source)
     required={"year":cols.get("year"),"month":cols.get("month"),"branch_code":cols.get("branch_code"),"business_group":cols.get("business_group"),"item":cols.get("item"),"principal":cols.get("principal"),"subline":cols.get("subline"),"channel":cols.get("channel"),"salesperson":cols.get("salesperson"),"territory":cols.get("territory"),"ho_target":cols.get("ho_target"),"branch_target":cols.get("branch_target")}
     missing=[name for name,value in required.items() if not value]
@@ -1740,7 +1779,6 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
             territory_col=required["territory"]
             territory_keys=list(dict.fromkeys(norm(source.at[idx,territory_col]) for idx in indices))
             territory_weights=pd.Series([sum(int(source.at[idx,required["ho_target"]]) for idx in indices if norm(source.at[idx,territory_col])==territory) for territory in territory_keys],dtype="float64")
-            source.loc[indices,required["ho_target"]]=0
             source.loc[indices,required["branch_target"]]=0
             for cell_index,cell_target in item_cells.items():
                 seller,channel=cell_keys[cell_index]
@@ -1751,7 +1789,7 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
                         row_weights=pd.Series([1.0]*len(matched),index=matched)
                     shares=_allocate_integer_amount(int(cell_target),row_weights)
                     for idx,value in shares.items():
-                        source.at[idx,required["ho_target"]]=int(value); source.at[idx,required["branch_target"]]=int(value)
+                        source.at[idx,required["branch_target"]]=int(value)
                 else:
                     if not territory_keys:
                         territory_keys=[""]; territory_weights=pd.Series([1.0])
@@ -1764,18 +1802,16 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
                         new_row[required["channel"]]=next(row["CHANNEL_OUTLET_GROUP"] for row in cells if cell_key(row)==(seller,channel))
                         if territory=="" and pd.isna(new_row[territory_col]): new_row[territory_col]=pd.NA
                         amount=int(territory_shares.iloc[territory_index])
-                        new_row[required["ho_target"]]=amount; new_row[required["branch_target"]]=amount
+                        new_row[required["ho_target"]]=0; new_row[required["branch_target"]]=amount
                         new_rows.append(new_row)
         if any(remaining_cells):
             raise ArithmeticError(f"TARGET_CABANG belum terplot penuh untuk Principal ID {pid[-1]} per ITEM_SUBLINI/SUBLINI_PRODUCT.")
     if new_rows: source=pd.concat([source,pd.DataFrame(new_rows,columns=source.columns)],ignore_index=True)
     source[required["ho_target"]]=pd.to_numeric(source[required["ho_target"]],errors="coerce").fillna(0).round().astype("int64")
     source[required["branch_target"]]=pd.to_numeric(source[required["branch_target"]],errors="coerce").fillna(0).round().astype("int64")
-    if (source[required["ho_target"]]!=source[required["branch_target"]]).any():
-        raise ArithmeticError("TARGET_CABANG harus sama dengan TARGET_REKOMENDASI_HO pada setiap baris.")
     check=source.groupby(group_names,dropna=False)[[required["ho_target"],required["branch_target"]]].sum()
     if (check[required["ho_target"]]!=check[required["branch_target"]]).any():
-        raise ArithmeticError("Rekonsiliasi gagal pada YEAR_ID, MONTH_ID, KODE_CABANG, BISNIS, ITEM_SUBLINI, PRINCIPLE ID, atau SUBLINI_PRODUCT.")
+        raise ArithmeticError("Total TARGET_CABANG tidak sama dengan TARGET_REKOMENDASI_HO pada item, Principal ID, dan sublini.")
     return source
 
 def filter_options(df,kind):
@@ -3292,7 +3328,11 @@ if main_section=="Breakdown Target":
                     _bt_edited=st.data_editor(_bt_alloc,key="bt_adjust_allocations",hide_index=True,width="stretch",height=440,disabled=[c for c in _bt_alloc.columns if c!="ADJUST_TARGET"],column_config={"ADJUST_TARGET":st.column_config.NumberColumn("Adjust Target",step=1,format="%,.0f"),"KONTRIBUSI_SALESPERSON_%":st.column_config.NumberColumn("Kontribusi Sales Person (%)",format="%.1f%%"),"TARGET_SALESPERSON":st.column_config.NumberColumn("Target Sales Person",format="%,.0f"),"KONTRIBUSI_CHANNEL_%":st.column_config.NumberColumn("Kontribusi Channel (%)",format="%.1f%%")})
                     _bt_base_allocations=_normalize_principal_target_allocations(_bt_edited,{})
                     _bt_seller_adjustments=st.session_state.get("_bt_seller_adjustments",{})
-                    _bt_final_allocations=_normalize_principal_target_allocations(_bt_base_allocations,_bt_seller_adjustments)
+                    try:
+                        _bt_final_allocations=_normalize_principal_target_allocations(_bt_base_allocations,_bt_seller_adjustments)
+                    except Exception as _bt_adjust_error:
+                        st.error(f"Adjust Target gagal dibagikan: {_bt_adjust_error}")
+                        st.stop()
                     _bt_target_check=_bt_final_allocations.groupby("PRINCIPLE ID",dropna=False).agg(Breakdown=("TARGET_CABANG","sum"),Target=("TARGET_PRINCIPAL","first"))
                     _bt_target_check["Selisih"]=_bt_target_check["Breakdown"]-_bt_target_check["Target"]
                     _bt_target_mismatch=_bt_target_check[_bt_target_check["Selisih"]!=0]
@@ -3303,14 +3343,19 @@ if main_section=="Breakdown Target":
                     _bt_summary=_build_breakdown_seller_summary(_bt_scope,_bt_base_allocations,int(_bt_year),int(_bt_month),_bt_selected_bg)
                     _bt_final_summary=_build_breakdown_seller_summary(_bt_scope,_bt_final_allocations,int(_bt_year),int(_bt_month),_bt_selected_bg)
                     st.markdown("#### Summary hasil breakdown per Sales Person Title")
-                    st.caption("Adjust Target mengubah porsi antar Sales Person dalam setiap Principal ID. Total tiap Principal tetap sama dengan target input.")
+                    st.caption("Adjust Target mengubah TARGET_CABANG per Sales Person dan Principal ID. TARGET_REKOMENDASI_HO tetap; jumlah adjustment otomatis diimbangi agar total cabang tetap sama dengan HO.")
                     _bt_summary["Adjust Target"]=_bt_summary["Sales Person Title"].map(_bt_seller_adjustments).fillna(0.0)
                     _bt_final_totals=_bt_final_summary.set_index("Sales Person Title")["Hasil Breakdown"].to_dict()
                     _bt_summary["Total Setelah Adjust"]=_bt_summary["Sales Person Title"].map(_bt_final_totals).fillna(0.0)
+                    _bt_base_totals=_bt_summary.set_index("Sales Person Title")["Hasil Breakdown"].to_dict()
+                    _bt_summary["Adjust Target Efektif"]=_bt_summary.apply(lambda row:row["Total Setelah Adjust"]-_bt_base_totals.get(row["Sales Person Title"],0),axis=1)
+                    _bt_balance_rows=_bt_summary[(pd.to_numeric(_bt_summary["Adjust Target Efektif"],errors="coerce")-pd.to_numeric(_bt_summary["Adjust Target"],errors="coerce")).abs()>0]
+                    if not _bt_balance_rows.empty:
+                        st.info("Penyesuaian bersih diimbangi otomatis pada Sales Person lain agar total TARGET_CABANG tetap sama dengan TARGET_REKOMENDASI_HO. Lihat kolom Adjust Target Efektif.")
                     _bt_summary["Growth vs Avg 3 Month"]=((_bt_summary["Total Setelah Adjust"]/_bt_summary["Avg 3 Month"]-1)*100).where(_bt_summary["Avg 3 Month"]>0)
-                    _bt_summary_columns=["Sales Person Title","Avg 3 Month","Hasil Breakdown",*[column for column in _bt_summary.columns if column.startswith("A/T ")],"Growth vs Avg 3 Month","Adjust Target","Total Setelah Adjust"]
+                    _bt_summary_columns=["Sales Person Title","Avg 3 Month","Hasil Breakdown",*[column for column in _bt_summary.columns if column.startswith("A/T ")],"Growth vs Avg 3 Month","Adjust Target","Adjust Target Efektif","Total Setelah Adjust"]
                     _bt_summary=_bt_summary[_bt_summary_columns]
-                    _bt_summary_config={column:st.column_config.NumberColumn(column,step=1 if column=="Adjust Target" else None,format="%,.0f") for column in ["Avg 3 Month","Hasil Breakdown","Adjust Target","Total Setelah Adjust"]}
+                    _bt_summary_config={column:st.column_config.NumberColumn(column,step=1 if column=="Adjust Target" else None,format="%,.0f") for column in ["Avg 3 Month","Hasil Breakdown","Adjust Target","Adjust Target Efektif","Total Setelah Adjust"]}
                     _bt_summary_config.update({column:st.column_config.NumberColumn(column,format="%.1f%%") for column in _bt_summary.columns if column.startswith("A/T ") or column=="Growth vs Avg 3 Month"})
                     _bt_summary_edited=st.data_editor(_bt_summary,key="bt_seller_summary_adjust",hide_index=True,width="stretch",height=300,num_rows="fixed",disabled=[column for column in _bt_summary.columns if column!="Adjust Target"],column_config=_bt_summary_config)
                     _bt_seller_adjustments={}
@@ -3335,6 +3380,7 @@ if main_section=="Breakdown Target":
                     st.dataframe(_bt_edited,width="stretch",height=440,hide_index=True)
     with _bt_tabs[1]:
         _bt_raw_upload=st.file_uploader("Unggah file mentah target (.xlsx)",type=["xlsx"],key="bt_raw_target_upload",help="TARGET_CABANG akan diisi dari breakdown tahap 1, dicocokkan menurut Sales Person Title, Principal ID, dan Channel Outlet Group.")
+        st.caption("TARGET_REKOMENDASI_HO tetap dari template. Hanya TARGET_CABANG yang berubah; total harus sama per periode, bisnis, ITEM_SUBLINI, Principal ID, dan SUBLINI_PRODUCT.")
         if st.session_state.get("_bt_allocations") is None or st.session_state["_bt_allocations"].empty:
             st.info("Selesaikan breakdown tahap 1 terlebih dahulu.")
         elif _bt_raw_upload is not None:
@@ -3343,7 +3389,7 @@ if main_section=="Breakdown Target":
                 _bt_raw_df=read_uploaded_file(_bt_raw_upload.name,_bt_raw_bytes)
                 _bt_final=_apply_principal_breakdown_to_raw(_bt_raw_df,st.session_state["_bt_allocations"])
                 _bt_added_rows=len(_bt_final)-len(_bt_raw_df)
-                st.success("Validasi lolos: TARGET_REKOMENDASI_HO = TARGET_CABANG pada setiap baris. Total per item, Principal ID, dan sublini tetap terjaga.")
+                st.success("Validasi lolos: TARGET_REKOMENDASI_HO tidak diubah. Total TARGET_CABANG sama dengan HO per tahun, bulan, cabang, bisnis, item, Principal ID, dan sublini.")
                 if _bt_added_rows>0:
                     st.info(f"{_bt_added_rows:,} baris Sales Person Title · Principal ID · Channel yang belum ada ditambahkan dari hasil breakdown.")
                 _bt_final_cols=_breakdown_target_columns(_bt_final)
