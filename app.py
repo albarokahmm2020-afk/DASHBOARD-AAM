@@ -3268,10 +3268,13 @@ if main_section=="Breakdown Target":
             st.session_state["_bt_manual_targets"]=_bt_targets
             _bt_input_total=int(pd.to_numeric(_bt_targets["TARGET_PRINCIPAL"],errors="coerce").fillna(0).map(lambda value:math.floor(float(value)+0.5)).sum())
             st.metric("Total target Principal ID",f"{_bt_input_total:,.0f}")
+            _bt_target_values=pd.to_numeric(_bt_targets["TARGET_PRINCIPAL"],errors="coerce").fillna(0).round().astype("int64")
+            _bt_current_target_signature=tuple(sorted((str(pid).strip().casefold(),int(amount)) for pid,amount in zip(_bt_targets["PRINCIPLE ID"],_bt_target_values)))
             st.caption("Target hasil breakdown dibulatkan ke bilangan utuh. Selisih pembulatan dibagikan agar total tetap sama.")
             if st.button("Buat breakdown per Sales Person dan Channel",key="bt_generate_allocations",type="primary"):
                 try:
                     st.session_state["_bt_allocations"]=_prepare_principal_channel_breakdown(_bt_scope,int(_bt_year),int(_bt_month),_bt_targets,_bt_basis,_bt_selected_bg)
+                    st.session_state["_bt_generated_target_signature"]=_bt_current_target_signature
                     st.session_state["_bt_seller_adjustments"]={}
                     st.session_state.pop("bt_seller_summary_adjust",None)
                     st.session_state.pop("bt_adjust_allocations",None)
@@ -3282,7 +3285,10 @@ if main_section=="Breakdown Target":
                         _bt_skipped_ids=sorted(set(_bt_skipped_history+_bt_skipped_weight))
                         st.warning(f"{len(_bt_skipped_ids):,} Principal ID dilewati karena tidak memiliki riwayat atau bobot 3 bulan: {', '.join(_bt_skipped_ids[:20])}{'…' if len(_bt_skipped_ids)>20 else ''}. Principal lain tetap diproses.")
                 except Exception as _bt_err: st.error(f"Breakdown gagal: {_bt_err}")
-            if st.session_state.get("_bt_allocations") is not None:
+            _bt_allocations_stale=st.session_state.get("_bt_allocations") is not None and st.session_state.get("_bt_generated_target_signature")!=_bt_current_target_signature
+            if _bt_allocations_stale:
+                st.warning("Target Principal ID berubah setelah breakdown dibuat. Klik ‘Buat breakdown per Sales Person dan Channel’ untuk memperbarui hasil.")
+            if st.session_state.get("_bt_allocations") is not None and not _bt_allocations_stale:
                 _bt_alloc=st.session_state["_bt_allocations"].copy()
                 _bt_alloc=_bt_alloc.drop(columns=["ADJUST_TARGET_SALESPERSON"],errors="ignore")
                 if _bt_alloc.empty:
@@ -3292,6 +3298,13 @@ if main_section=="Breakdown Target":
                     _bt_base_allocations=_normalize_principal_target_allocations(_bt_edited,{})
                     _bt_seller_adjustments=st.session_state.get("_bt_seller_adjustments",{})
                     _bt_final_allocations=_normalize_principal_target_allocations(_bt_base_allocations,_bt_seller_adjustments)
+                    _bt_target_check=_bt_final_allocations.groupby("PRINCIPLE ID",dropna=False).agg(Breakdown=("TARGET_CABANG","sum"),Target=("TARGET_PRINCIPAL","first"))
+                    _bt_target_check["Selisih"]=_bt_target_check["Breakdown"]-_bt_target_check["Target"]
+                    _bt_target_mismatch=_bt_target_check[_bt_target_check["Selisih"]!=0]
+                    if not _bt_target_mismatch.empty:
+                        st.error("Total breakdown belum sama dengan target input per Principal ID. Periksa target dan adjustment sebelum lanjut.")
+                        st.dataframe(_bt_target_mismatch,width="stretch",height=min(280,42+len(_bt_target_mismatch)*34),hide_index=False)
+                        st.stop()
                     _bt_summary=_build_breakdown_seller_summary(_bt_scope,_bt_base_allocations,int(_bt_year),int(_bt_month),_bt_selected_bg)
                     _bt_final_summary=_build_breakdown_seller_summary(_bt_scope,_bt_final_allocations,int(_bt_year),int(_bt_month),_bt_selected_bg)
                     st.markdown("#### Summary hasil breakdown per Sales Person Title")
@@ -3320,6 +3333,11 @@ if main_section=="Breakdown Target":
                     _bt_total_cols[1].metric("Total adjust",f"{_bt_summary['Adjust Target'].sum():,.0f}")
                     _bt_total_cols[2].metric("Total setelah adjust",f"{_bt_summary['Total Setelah Adjust'].sum():,.0f}")
                     _bt_total_cols[3].metric("Selisih dari target input",f"{_bt_input_total-_bt_summary['Total Setelah Adjust'].sum():,.0f}")
+                    _bt_skipped_ids={str(pid).strip().casefold() for pid in (_bt_allocations.attrs.get("skipped_no_history",[])+_bt_allocations.attrs.get("skipped_no_weight",[]))}
+                    _bt_skipped_mask=_bt_targets["PRINCIPLE ID"].astype(str).str.strip().str.casefold().isin(_bt_skipped_ids)
+                    _bt_skipped_target=int(pd.to_numeric(_bt_targets.loc[_bt_skipped_mask,"TARGET_PRINCIPAL"],errors="coerce").fillna(0).round().sum())
+                    if _bt_skipped_target:
+                        st.warning(f"Total belum mencakup {_bt_skipped_target:,.0f} dari Principal ID tanpa riwayat/bobot 3 bulan. Principal itu dilewati sesuai aturan; total breakdown hanya cocok untuk Principal ID yang berhasil diproses.")
                     st.markdown("#### Breakdown per Sales Person Title · Principal ID · Channel Outlet Group")
                     st.dataframe(_bt_edited,width="stretch",height=440,hide_index=True)
     with _bt_tabs[1]:
