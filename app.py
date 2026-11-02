@@ -1246,10 +1246,12 @@ def _breakdown_target_columns(frame):
     aliases={
         "year":["year id","year_id","year"],
         "month":["month id","month_id","month"],
+        "branch_code":["kode cabang","kode_cabang","branch code","branch_code"],
         "subline":["sublini product","sublini_product","subline product"],
         "item":["item sublini","item_sublini","item"],
         "principal":["principle id","principal id","principal_id"],
         "channel":["channel outlet group","channel_outlet_group","channel group","channel_group"],
+        "territory":["teritory geo group","territory geo group","teritory_geo_group","territory_geo_group"],
         "business_group":["bisnis","bisnis group","business group","business_group"],
         "salesperson":["salesperson position","salesperson_position","sales person title"],
         "ho_target":["target rekomendasi ho","target_rekomendasi_ho","target ho"],
@@ -1669,127 +1671,111 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
             for channel,channel_weight in channel_weights.items():
                 channel_share=float(channel_weight)/seller_total
                 base=int(channel_targets.loc[channel])
-                rows.append({"BUSINESS_GROUP":str(selected_business_group or (hist[business_col].dropna().iloc[0] if business_col and hist[business_col].notna().any() else "")),"PRINCIPLE ID":pid,"PRINCIPAL_NAME":str(target.get("PRINCIPAL_NAME",pid)),"SALESPERSON_POSITION":seller,"KONTRIBUSI_SALESPERSON_%":seller_share*100,"TARGET_SALESPERSON":seller_target,"CHANNEL_OUTLET_GROUP":channel,"KONTRIBUSI_CHANNEL_%":channel_share*100,"TARGET_PRINCIPAL":total,"AVERAGE_3_BULAN":float(channel_weight)/3,"PORSI_%":float(channel_weight)/denom*100,"TARGET_BREAKDOWN":base,"ADJUST_TARGET":0,"TARGET_CABANG":base})
-    result=pd.DataFrame(rows,columns=["BUSINESS_GROUP","PRINCIPLE ID","PRINCIPAL_NAME","SALESPERSON_POSITION","KONTRIBUSI_SALESPERSON_%","TARGET_SALESPERSON","CHANNEL_OUTLET_GROUP","KONTRIBUSI_CHANNEL_%","TARGET_PRINCIPAL","AVERAGE_3_BULAN","PORSI_%","TARGET_BREAKDOWN","ADJUST_TARGET","TARGET_CABANG"])
+                rows.append({"YEAR_ID":int(year),"MONTH_ID":int(month),"BUSINESS_GROUP":str(selected_business_group or (hist[business_col].dropna().iloc[0] if business_col and hist[business_col].notna().any() else "")),"PRINCIPLE ID":pid,"PRINCIPAL_NAME":str(target.get("PRINCIPAL_NAME",pid)),"SALESPERSON_POSITION":seller,"KONTRIBUSI_SALESPERSON_%":seller_share*100,"TARGET_SALESPERSON":seller_target,"CHANNEL_OUTLET_GROUP":channel,"KONTRIBUSI_CHANNEL_%":channel_share*100,"TARGET_PRINCIPAL":total,"AVERAGE_3_BULAN":float(channel_weight)/3,"PORSI_%":float(channel_weight)/denom*100,"TARGET_BREAKDOWN":base,"ADJUST_TARGET":0,"TARGET_CABANG":base})
+    result=pd.DataFrame(rows,columns=["YEAR_ID","MONTH_ID","BUSINESS_GROUP","PRINCIPLE ID","PRINCIPAL_NAME","SALESPERSON_POSITION","KONTRIBUSI_SALESPERSON_%","TARGET_SALESPERSON","CHANNEL_OUTLET_GROUP","KONTRIBUSI_CHANNEL_%","TARGET_PRINCIPAL","AVERAGE_3_BULAN","PORSI_%","TARGET_BREAKDOWN","ADJUST_TARGET","TARGET_CABANG"])
     result.attrs["skipped_no_history"]=skipped_no_history
     result.attrs["skipped_no_weight"]=skipped_no_weight
     result.attrs["fallback_ids"]=fallback_ids
     return result
 
 def _apply_principal_breakdown_to_raw(raw_frame, allocations):
-    """Match or add raw target rows, balancing integer branch targets by Principal and item subline."""
+    """Apply Step 1 at row level; HO and branch targets stay exactly equal."""
     source=raw_frame.copy(); cols=_breakdown_target_columns(source)
-    required={"salesperson":cols.get("salesperson"),"principal":cols.get("principal"),"channel":cols.get("channel"),"item":cols.get("item"),"branch_target":cols.get("branch_target"),"ho_target":cols.get("ho_target")}
-    if "BUSINESS_GROUP" in allocations.columns: required["business_group"]=cols.get("business_group")
+    required={"year":cols.get("year"),"month":cols.get("month"),"branch_code":cols.get("branch_code"),"business_group":cols.get("business_group"),"item":cols.get("item"),"principal":cols.get("principal"),"subline":cols.get("subline"),"channel":cols.get("channel"),"salesperson":cols.get("salesperson"),"territory":cols.get("territory"),"ho_target":cols.get("ho_target"),"branch_target":cols.get("branch_target")}
     missing=[name for name,value in required.items() if not value]
-    if missing: raise ValueError("Kolom file mentah wajib tidak ditemukan: "+", ".join(missing))
+    if missing: raise ValueError("Template wajib memuat semua dimensi target: "+", ".join(missing))
+    def norm(value):
+        if pd.isna(value): return ""
+        if isinstance(value,(int,float)) and float(value).is_integer(): return str(int(value))
+        text=str(value).strip()
+        if text.endswith(".0") and text[:-2].isdigit(): text=text[:-2]
+        return text.casefold()
     source[required["ho_target"]]=pd.to_numeric(source[required["ho_target"]],errors="coerce").fillna(0)
     non_integer=(source[required["ho_target"]]-source[required["ho_target"]].round()).abs()>1e-8
-    if non_integer.any(): raise ValueError("TARGET_REKOMENDASI_HO harus bilangan bulat agar total TARGET_CABANG per item tetap sama.")
+    if non_integer.any(): raise ValueError("TARGET_REKOMENDASI_HO harus bilangan bulat.")
     source[required["ho_target"]]=source[required["ho_target"]].round().astype("int64")
-    key_order=["business_group","salesperson","principal","channel"] if "business_group" in required else ["salesperson","principal","channel"]
-    key_cols=[required[k] for k in key_order]
-    key_names=[{"business_group":"BUSINESS_GROUP","salesperson":"SALESPERSON_POSITION","principal":"PRINCIPLE ID","channel":"CHANNEL_OUTLET_GROUP"}[k] for k in key_order]
-    principal_order=[k for k in ["business_group","principal"] if k in key_order]
-    principal_cols=[required[k] for k in principal_order]
-    def norm_value(value): return "" if pd.isna(value) else str(value).strip().casefold()
-    target=allocations.groupby(key_names,as_index=False,dropna=False)["TARGET_CABANG"].sum()
-    target_records=list(target.to_dict("records"))
-    def target_key(row): return tuple(norm_value(row[name]) for name in key_names)
-    def principal_key(row): return tuple(norm_value(row[name]) for name in (["BUSINESS_GROUP","PRINCIPLE ID"] if "business_group" in principal_order else ["PRINCIPLE ID"]))
-    target_lookup={target_key(row):int(math.floor(abs(float(row["TARGET_CABANG"]))+0.5))*(1 if float(row["TARGET_CABANG"])>=0 else -1) for row in target_records}
-    original_pids={tuple(norm_value(value) for value in row) for row in source[principal_cols].itertuples(index=False,name=None)}
-    existing_keys={tuple(norm_value(value) for value in row) for row in source[key_cols].itertuples(index=False,name=None)}
-    added_rows=[]
-    for row in target_records:
-        key_tuple=target_key(row)
-        if key_tuple in existing_keys:
-            continue
-        pid_key=principal_key(row)
-        if pid_key in original_pids:
-            continue
-        new_row={column:pd.NA for column in source.columns}
-        for raw_column,target_column in zip(key_cols,key_names):
-            new_row[raw_column]=row[target_column]
-        new_row[required["item"]]=pd.NA
-        new_row[required["ho_target"]]=target_lookup[key_tuple] if pid_key not in original_pids else 0
-        new_row[required["branch_target"]]=0.0
-        added_rows.append(new_row)
-        existing_keys.add(key_tuple)
-    if added_rows:
-        source=pd.concat([source,pd.DataFrame(added_rows,columns=source.columns)],ignore_index=True)
-    def row_principal_keys(frame): return [tuple(norm_value(value) for value in row) for row in frame[principal_cols].itertuples(index=False,name=None)]
-    def row_cell_keys(frame): return [tuple(norm_value(value) for value in row) for row in frame[key_cols].itertuples(index=False,name=None)]
-    def row_item_keys(frame): return frame[required["item"]].map(norm_value).tolist()
-    pid_values=row_principal_keys(source); cell_values=row_cell_keys(source); item_values=row_item_keys(source)
-    target_cells_by_pid={}
-    for row in target_records:
-        target_cells_by_pid.setdefault(principal_key(row),[]).append((target_key(row),norm_value(row["SALESPERSON_POSITION"]),norm_value(row["CHANNEL_OUTLET_GROUP"]),target_lookup[target_key(row)]))
-    # Add missing seller/channel lines inside every existing item subline.
-    existing_item_cells={(pid,item,cell) for pid,item,cell in zip(pid_values,item_values,cell_values)}
-    item_added=[]
-    for pid,cells in target_cells_by_pid.items():
-        pid_indices=[idx for idx,value in enumerate(pid_values) if value==pid]
-        if not pid_indices: continue
-        items=list(dict.fromkeys(item_values[idx] for idx in pid_indices))
-        for item in items:
-            for cell,seller_value,channel_value,_ in cells:
-                if (pid,item,cell) in existing_item_cells: continue
-                template=source.iloc[next(idx for idx in pid_indices if item_values[idx]==item)].to_dict()
-                for raw_column,target_column in zip(key_cols,key_names):
-                    template[raw_column]=next(row[target_column] for row in target_records if target_key(row)==cell)
-                template[required["item"]]=source.iloc[next(idx for idx in pid_indices if item_values[idx]==item)][required["item"]]
-                template[required["ho_target"]]=0
-                template[required["branch_target"]]=0
-                item_added.append(template); existing_item_cells.add((pid,item,cell))
-    if item_added:
-        source=pd.concat([source,pd.DataFrame(item_added,columns=source.columns)],ignore_index=True)
-    source[required["branch_target"]]=0
-    pid_values=row_principal_keys(source); cell_values=row_cell_keys(source); item_values=row_item_keys(source)
-    alloc_pid_set=set(target_cells_by_pid)
-    # Principals with no Step 1 allocation retain HO as branch target.
-    for idx,pid in enumerate(pid_values):
-        if pid not in alloc_pid_set:
-            source.at[idx,required["branch_target"]]=int(source.at[idx,required["ho_target"]])
-    for pid,cells in target_cells_by_pid.items():
-        pid_indices=[idx for idx,value in enumerate(pid_values) if value==pid]
-        item_groups={}
-        for idx in pid_indices: item_groups.setdefault(item_values[idx],[]).append(idx)
-        cell_keys=[(seller,channel) for _,seller,channel,_ in cells]
-        cell_weights=pd.Series([max(0,value) for _,_,_,value in cells],index=range(len(cells)),dtype="float64")
-        item_totals={item:int(pd.to_numeric(source.loc[indices,required["ho_target"]],errors="coerce").fillna(0).sum()) for item,indices in item_groups.items()}
-        principal_total=sum(item_totals.values())
-        cell_totals=_allocate_integer_amount(principal_total,cell_weights)
-        remaining_cells=cell_totals.tolist()
-        for item,indices in item_groups.items():
-            item_target=item_totals[item]
-            item_cells=_allocate_integer_capped(item_target,cell_weights,remaining_cells)
-            remaining_cells=[remaining_cells[index]-int(item_cells.iloc[index]) for index in range(len(remaining_cells))]
+    source[required["branch_target"]]=source[required["ho_target"]].astype("int64")
+    alloc=allocations.copy()
+    alloc["TARGET_CABANG"]=pd.to_numeric(alloc["TARGET_CABANG"],errors="coerce").fillna(0).round().astype("int64")
+    alloc_key_names=[name for name in ["YEAR_ID","MONTH_ID"] if name in alloc.columns]+["BUSINESS_GROUP","SALESPERSON_POSITION","PRINCIPLE ID","CHANNEL_OUTLET_GROUP"]
+    if not all(name in alloc.columns for name in alloc_key_names): raise ValueError("Breakdown Step 1 wajib memuat periode, Business Group, Sales Person Title, Principal ID, dan Channel Outlet Group.")
+    target=alloc.groupby(alloc_key_names,as_index=False,dropna=False)["TARGET_CABANG"].sum()
+    target_records=target.to_dict("records")
+    def pid_key(row): return tuple(norm(row[name]) for name in [*(["YEAR_ID","MONTH_ID"] if "YEAR_ID" in row and "MONTH_ID" in row else []),"BUSINESS_GROUP","PRINCIPLE ID"])
+    def cell_key(row): return (norm(row["SALESPERSON_POSITION"]),norm(row["CHANNEL_OUTLET_GROUP"]))
+    targets_by_pid={}
+    for row in target_records: targets_by_pid.setdefault(pid_key(row),[]).append(row)
+    pid_cols=[*([required["year"],required["month"]] if "YEAR_ID" in alloc.columns and "MONTH_ID" in alloc.columns else []),required["business_group"],required["principal"]]
+    source_pid_keys=[tuple(norm(v) for v in row) for row in source[pid_cols].itertuples(index=False,name=None)]
+    source_pid_set=set(source_pid_keys)
+    missing_pids=[pid for pid in targets_by_pid if pid not in source_pid_set and sum(int(row["TARGET_CABANG"]) for row in targets_by_pid[pid])>0]
+    if missing_pids:
+        raise ValueError("Principal ID breakdown tidak ada di template; ITEM_SUBLINI dan SUBLINI_PRODUCT tidak bisa dipetakan: "+", ".join(pid[-1] for pid in missing_pids[:20]))
+    target_totals={pid:sum(int(row["TARGET_CABANG"]) for row in rows) for pid,rows in targets_by_pid.items()}
+    source_pid_totals={}
+    for key,amount in zip(source_pid_keys,source[required["ho_target"]].tolist()): source_pid_totals[key]=source_pid_totals.get(key,0)+int(amount)
+    total_mismatch=[(pid,target_totals[pid],source_pid_totals.get(pid,0)) for pid in targets_by_pid if target_totals[pid]!=source_pid_totals.get(pid,0)]
+    if total_mismatch:
+        details="; ".join(f"{pid[-1]}: Step 1 {target:,} vs TARGET_REKOMENDASI_HO {ho:,}" for pid,target,ho in total_mismatch[:12])
+        raise ValueError("Total target Principal ID Step 1 harus sama dengan total TARGET_REKOMENDASI_HO di template sebelum dipetakan. "+details)
+    group_names=[required[name] for name in ["year","month","branch_code","business_group","item","principal","subline"]]
+    group_keys=[tuple(norm(v) for v in row) for row in source[group_names].itertuples(index=False,name=None)]
+    groups={}
+    for idx,key in enumerate(group_keys): groups.setdefault(key,[]).append(idx)
+    new_rows=[]
+    for pid,cells in targets_by_pid.items():
+        pid_indices=[idx for idx,key in enumerate(source_pid_keys) if key==pid]
+        cell_keys=[cell_key(row) for row in cells]
+        cell_weights=pd.Series([max(0,int(row["TARGET_CABANG"])) for row in cells],dtype="float64")
+        principal_total=sum(int(source.at[idx,required["ho_target"]]) for idx in pid_indices)
+        expected_cells=_allocate_integer_amount(principal_total,cell_weights).tolist()
+        remaining_cells=expected_cells[:]
+        for group_key,indices in groups.items():
+            group_pid=tuple(group_key[index] for index in ([0,1,3,5] if "YEAR_ID" in alloc.columns and "MONTH_ID" in alloc.columns else [3,5]))
+            if group_pid!=pid: continue
+            item_total=sum(int(source.at[idx,required["ho_target"]]) for idx in indices)
+            item_cells=_allocate_integer_capped(item_total,cell_weights,remaining_cells)
+            remaining_cells=[remaining_cells[i]-int(item_cells.iloc[i]) for i in range(len(remaining_cells))]
+            original_group=source.loc[indices].copy()
+            territory_col=required["territory"]
+            territory_keys=list(dict.fromkeys(norm(source.at[idx,territory_col]) for idx in indices))
+            territory_weights=pd.Series([sum(int(source.at[idx,required["ho_target"]]) for idx in indices if norm(source.at[idx,territory_col])==territory) for territory in territory_keys],dtype="float64")
+            source.loc[indices,required["ho_target"]]=0
+            source.loc[indices,required["branch_target"]]=0
             for cell_index,cell_target in item_cells.items():
                 seller,channel=cell_keys[cell_index]
-                cell_indices=[idx for idx in indices if norm_value(source.at[idx,required["salesperson"]])==seller and norm_value(source.at[idx,required["channel"]])==channel]
-                if not cell_indices: continue
-                raw_weights=pd.to_numeric(source.loc[cell_indices,required["ho_target"]],errors="coerce").fillna(0).clip(lower=0)
-                source.loc[cell_indices,required["branch_target"]]=_allocate_integer_amount(cell_target,raw_weights)
+                matched=[idx for idx in indices if norm(source.at[idx,required["salesperson"]])==seller and norm(source.at[idx,required["channel"]])==channel]
+                if matched:
+                    row_weights=pd.to_numeric(original_group.loc[matched,required["ho_target"]],errors="coerce").fillna(0).clip(lower=0)
+                    if float(row_weights.sum())<=0:
+                        row_weights=pd.Series([1.0]*len(matched),index=matched)
+                    shares=_allocate_integer_amount(int(cell_target),row_weights)
+                    for idx,value in shares.items():
+                        source.at[idx,required["ho_target"]]=int(value); source.at[idx,required["branch_target"]]=int(value)
+                else:
+                    if not territory_keys:
+                        territory_keys=[""]; territory_weights=pd.Series([1.0])
+                    if float(territory_weights.sum())<=0: territory_weights=pd.Series([1.0]*len(territory_keys))
+                    territory_shares=_allocate_integer_amount(int(cell_target),territory_weights)
+                    for territory_index,territory in enumerate(territory_keys):
+                        template_idx=next((idx for idx in indices if norm(source.at[idx,territory_col])==territory),indices[0])
+                        new_row=source.loc[template_idx].to_dict()
+                        new_row[required["salesperson"]]=next(row["SALESPERSON_POSITION"] for row in cells if cell_key(row)==(seller,channel))
+                        new_row[required["channel"]]=next(row["CHANNEL_OUTLET_GROUP"] for row in cells if cell_key(row)==(seller,channel))
+                        if territory=="" and pd.isna(new_row[territory_col]): new_row[territory_col]=pd.NA
+                        amount=int(territory_shares.iloc[territory_index])
+                        new_row[required["ho_target"]]=amount; new_row[required["branch_target"]]=amount
+                        new_rows.append(new_row)
         if any(remaining_cells):
-            raise ArithmeticError("Total breakdown Principal tidak sama dengan total item sublini.")
-    # Add a recon line when a Principal is wholly absent from the raw file; no item mapping exists in that case.
-    for pid,cells in target_cells_by_pid.items():
-        if any(value==pid for value in row_principal_keys(source)): continue
-        for cell,seller,channel,value in cells:
-            target_record=next(row for row in target_records if target_key(row)==cell)
-            new_row={column:pd.NA for column in source.columns}
-            for raw_column,target_column in zip(key_cols,key_names): new_row[raw_column]=target_record[target_column]
-            new_row[required["item"]]=pd.NA
-            new_row[required["ho_target"]]=value
-            new_row[required["branch_target"]]=value
-            source=pd.concat([source,pd.DataFrame([new_row],columns=source.columns)],ignore_index=True)
-    source[required["ho_target"]]=pd.to_numeric(source[required["ho_target"]],errors="coerce").fillna(0).astype("int64")
+            raise ArithmeticError(f"TARGET_CABANG belum terplot penuh untuk Principal ID {pid[-1]} per ITEM_SUBLINI/SUBLINI_PRODUCT.")
+    if new_rows: source=pd.concat([source,pd.DataFrame(new_rows,columns=source.columns)],ignore_index=True)
+    source[required["ho_target"]]=pd.to_numeric(source[required["ho_target"]],errors="coerce").fillna(0).round().astype("int64")
     source[required["branch_target"]]=pd.to_numeric(source[required["branch_target"]],errors="coerce").fillna(0).round().astype("int64")
-    recon_dims=list(dict.fromkeys([*principal_cols,required["item"]]))
-    check=source.groupby(recon_dims,dropna=False)[[required["ho_target"],required["branch_target"]]].sum()
+    if (source[required["ho_target"]]!=source[required["branch_target"]]).any():
+        raise ArithmeticError("TARGET_CABANG harus sama dengan TARGET_REKOMENDASI_HO pada setiap baris.")
+    check=source.groupby(group_names,dropna=False)[[required["ho_target"],required["branch_target"]]].sum()
     if (check[required["ho_target"]]!=check[required["branch_target"]]).any():
-        raise ArithmeticError("TARGET_CABANG tidak sama dengan TARGET_REKOMENDASI_HO pada salah satu Principal ID × ITEM_SUBLINI.")
+        raise ArithmeticError("Rekonsiliasi gagal pada YEAR_ID, MONTH_ID, KODE_CABANG, BISNIS, ITEM_SUBLINI, PRINCIPLE ID, atau SUBLINI_PRODUCT.")
     return source
 
 def filter_options(df,kind):
@@ -3357,6 +3343,7 @@ if main_section=="Breakdown Target":
                 _bt_raw_df=read_uploaded_file(_bt_raw_upload.name,_bt_raw_bytes)
                 _bt_final=_apply_principal_breakdown_to_raw(_bt_raw_df,st.session_state["_bt_allocations"])
                 _bt_added_rows=len(_bt_final)-len(_bt_raw_df)
+                st.success("Validasi lolos: TARGET_REKOMENDASI_HO = TARGET_CABANG pada setiap baris. Total per item, Principal ID, dan sublini tetap terjaga.")
                 if _bt_added_rows>0:
                     st.info(f"{_bt_added_rows:,} baris Sales Person Title · Principal ID · Channel yang belum ada ditambahkan dari hasil breakdown.")
                 _bt_final_cols=_breakdown_target_columns(_bt_final)
@@ -3368,7 +3355,7 @@ if main_section=="Breakdown Target":
                 _bt_unmapped_pids=sorted(_bt_final.loc[_bt_unmapped_mask,_bt_final_pid_col].dropna().astype(str).unique())
                 if _bt_unmapped_pids:
                     st.warning(f"ITEM_SUBLINI tidak tersedia di file mentah untuk Principal ID baru: {', '.join(_bt_unmapped_pids)}. Isi ITEM_SUBLINI pada baris baru sebelum memakai file ekspor.")
-                _bt_recon_dims=([_bt_final_cols["business_group"]] if _bt_final_cols["business_group"] else [])+[_bt_final_cols["principal"],_bt_final_cols["item"]]
+                _bt_recon_dims=[_bt_final_cols[name] for name in ["year","month","branch_code","business_group","item","principal","subline"] if _bt_final_cols.get(name)]
                 _bt_recon=_bt_final.groupby(_bt_recon_dims,dropna=False,as_index=False)[[_bt_final_cols["ho_target"],_bt_final_cols["branch_target"]]].sum()
                 _bt_recon=_bt_recon.rename(columns={_bt_final_cols["ho_target"]:"Total TARGET_REKOMENDASI_HO",_bt_final_cols["branch_target"]:"Total TARGET_CABANG"})
                 _bt_recon["Selisih"]=_bt_recon["Total TARGET_CABANG"]-_bt_recon["Total TARGET_REKOMENDASI_HO"]
