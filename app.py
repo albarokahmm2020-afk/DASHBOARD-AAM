@@ -1487,6 +1487,50 @@ def _parse_principal_target_paste(text):
     result=pd.DataFrame(parsed,columns=["PRINCIPLE ID","TARGET_PRINCIPAL"])
     return result.groupby("PRINCIPLE ID",as_index=False,sort=False)["TARGET_PRINCIPAL"].sum()
 
+def _build_breakdown_seller_summary(history_frame, allocations, year, month, selected_business_group=None):
+    """Summarize seller target against average gross sales and prior-month A/T."""
+    seller_col=col(history_frame,"salesperson"); date_col=col(history_frame,"date")
+    sales_col=col(history_frame,"sales"); target_col=col(history_frame,"target_value")
+    if not seller_col or not date_col or not sales_col:
+        raise ValueError("Kolom tanggal, Sales Person Title, dan Sales Value Gross wajib tersedia untuk summary.")
+    target_period=int(year)*12+int(month)-1
+    prior=[target_period-i for i in (3,2,1)]
+    ycol=col(history_frame,"year"); mcol=col(history_frame,"month")
+    hy=pd.to_numeric(history_frame[ycol],errors="coerce") if ycol else pd.Series(pd.NA,index=history_frame.index)
+    hm=_month_number_series(history_frame[mcol]) if mcol else pd.Series(pd.NA,index=history_frame.index)
+    if hy.isna().all() or hm.isna().all():
+        dates=pd.to_datetime(history_frame[date_col],errors="coerce"); hy=dates.dt.year; hm=dates.dt.month
+    history=history_frame.copy()
+    history["_period"]=hy*12+(hm-1)
+    history=history[history["_period"].isin(prior)].copy()
+    bg_col=col(history,"business_group")
+    if selected_business_group and bg_col:
+        history=history[history[bg_col].astype("string").str.strip().eq(str(selected_business_group).strip())]
+    history["_seller"]=history[seller_col].astype("string").str.strip()
+    history["_sales"]=pd.to_numeric(history[sales_col],errors="coerce").fillna(0)
+    history["_target"]=pd.to_numeric(history[target_col],errors="coerce").fillna(0) if target_col else 0.0
+    monthly=history.groupby(["_seller","_period"],dropna=False)[["_sales","_target"]].sum()
+    breakdown=allocations.copy()
+    breakdown["_seller"]=breakdown["SALESPERSON_POSITION"].astype("string").str.strip()
+    breakdown["_breakdown_target"]=pd.to_numeric(breakdown["TARGET_CABANG"],errors="coerce").fillna(0)
+    breakdown=breakdown.groupby("_seller",as_index=False)["_breakdown_target"].sum()
+    rows=[]
+    for _,seller_row in breakdown.iterrows():
+        seller=seller_row["_seller"]
+        seller_months=monthly.loc[seller] if seller in monthly.index.get_level_values(0) else pd.DataFrame(columns=["_sales","_target"])
+        sales_by_period={int(period):float(row["_sales"]) for period,row in seller_months.iterrows()} if not seller_months.empty else {}
+        target_by_period={int(period):float(row["_target"]) for period,row in seller_months.iterrows()} if not seller_months.empty else {}
+        average=sum(sales_by_period.get(period,0.0) for period in prior)/3
+        row={"Sales Person Title":str(seller),"Avg 3 Month":average}
+        for period in prior:
+            month_number=(period%12)+1
+            month_name=MONTHS[month_number]
+            actual=sales_by_period.get(period,0.0); target=target_by_period.get(period,0.0)
+            row[f"A/T {month_name}"]=actual/target*100 if target else None
+        row["Growth vs Avg 3 Month"]=(float(seller_row["_breakdown_target"])/average-1)*100 if average else None
+        rows.append(row)
+    return pd.DataFrame(rows)
+
 def _prepare_principal_channel_breakdown(history_frame, year, month, principal_targets, average_basis="Sales Value Gross", selected_business_group=None):
     """Allocate manually entered Principal targets to sellers and outlet channels by 3-month history."""
     title_col=col(history_frame,"salesperson"); principal_col=col(history_frame,"principal")
@@ -3052,6 +3096,12 @@ if main_section=="Breakdown Target":
                     _bt_edited=st.data_editor(_bt_alloc,key="bt_adjust_allocations",hide_index=True,width="stretch",height=440,disabled=[c for c in _bt_alloc.columns if c!="ADJUST_TARGET"],column_config={"ADJUST_TARGET":st.column_config.NumberColumn("Adjust Target",step=1000,format="%,.0f")})
                     _bt_edited["TARGET_CABANG"]=pd.to_numeric(_bt_edited["TARGET_BREAKDOWN"],errors="coerce").fillna(0)+pd.to_numeric(_bt_edited["ADJUST_TARGET"],errors="coerce").fillna(0)
                     st.session_state["_bt_allocations"]=_bt_edited
+                    _bt_summary=_build_breakdown_seller_summary(_bt_scope,_bt_edited,int(_bt_year),int(_bt_month),_bt_selected_bg)
+                    st.markdown("#### Summary hasil breakdown per Sales Person Title")
+                    st.caption("A/T = actual ÷ target untuk tiga bulan sebelum bulan target. Growth = target hasil breakdown dibanding Avg 3 Month.")
+                    _bt_summary_config={column:st.column_config.NumberColumn(column,format="%,.0f") for column in _bt_summary.columns if column=="Avg 3 Month"}
+                    _bt_summary_config.update({column:st.column_config.NumberColumn(column,format="%.1f%%") for column in _bt_summary.columns if column.startswith("A/T ") or column=="Growth vs Avg 3 Month"})
+                    st.dataframe(_bt_summary,width="stretch",height=300,hide_index=True,column_config=_bt_summary_config)
                     st.markdown("#### Breakdown per Sales Person Title · Principal ID · Channel Outlet Group")
                     st.dataframe(_bt_edited,width="stretch",height=440,hide_index=True)
     with _bt_tabs[1]:
