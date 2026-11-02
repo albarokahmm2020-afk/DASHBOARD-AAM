@@ -1851,7 +1851,7 @@ div[data-testid='stVegaLiteChart'] > div,.vega-embed {{ width:100% !important; m
 .vega-embed canvas,.vega-embed svg {{ display:block; max-width:100% !important; background:transparent !important; }}
 hr {{ border-color:#D8E0EA !important; }}
 @media (max-width:900px) {{ .stMainBlockContainer {{ padding-left:1rem !important; padding-right:1rem !important; }} }}
-@media (max-width:760px) {{
+@media (max-width:900px) {{
   .stMainBlockContainer {{ padding:.65rem .7rem 2rem !important; }}
   div[data-testid='stHorizontalBlock'] {{ flex-wrap:wrap !important; gap:.65rem !important; }}
   div[data-testid='stHorizontalBlock'] > div[data-testid='column'] {{
@@ -5262,7 +5262,7 @@ elif main_section=="Report":
             key="report_template_upload",
         )
         st.markdown("---")
-        st.markdown("**Variabel yang tersedia:**")
+        st.markdown("**Variabel yang tersedia ditampilkan di bawah area template dan hasil.**")
 
         # Kumpulkan data aktual dari semua program aktif
         _rpt_prog_data = []
@@ -5323,9 +5323,6 @@ elif main_section=="Report":
         # Tampilkan daftar variabel tersedia
         _var_rows = [{"Variabel": f"{{{{{k}}}}}", "Nilai Saat Ini": v} for k,v in _vars.items()]
         _var_df = pd.DataFrame(_var_rows)
-        st.dataframe(_var_df, width="stretch", hide_index=True,
-                     height=38+len(_var_df)*32)
-
         # Download template contoh
         _sample_template = (
             "LAPORAN PROGRAM PUSH CHP AAM\n"
@@ -5412,6 +5409,15 @@ elif main_section=="Report":
                     f"</div>",
                     unsafe_allow_html=True,
                 )
+
+    st.markdown("#### Variabel dan Nilai Saat Ini")
+    st.dataframe(
+        _var_df,width="stretch",hide_index=True,height=min(520,38+len(_var_df)*32),
+        column_config={
+            "Variabel":st.column_config.TextColumn("Variabel",width="medium"),
+            "Nilai Saat Ini":st.column_config.TextColumn("Nilai Saat Ini",width="medium"),
+        },
+    )
 
 elif main_section=="Performance Sales":
     st.markdown("<div class='score-heading'>PERFORMANCE SALES · GROSS</div>",unsafe_allow_html=True)
