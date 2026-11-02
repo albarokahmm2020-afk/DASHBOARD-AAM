@@ -960,7 +960,7 @@ def _drive_upload_bytes(file_name,payload,mime_type="application/octet-stream",c
             drive_message="Izin ditolak oleh Google Drive."
             drive_reasons=set()
         if "storageQuotaExceeded" in drive_reasons:
-            guidance="Pastikan folder tujuan berada di Shared Drive dan akun layanan memiliki peran Kontributor atau Pengelola Konten."
+            guidance="Akun layanan tidak punya kuota untuk menyimpan file di Drive Saya. Gunakan Shared Drive yang dapat ditulis atau autentikasi OAuth akun pemilik folder."
         elif drive_reasons.intersection({"insufficientFilePermissions","insufficientPermissions","teamDriveMembershipRequired"}):
             guidance="Periksa akses akun layanan pada folder tujuan; untuk Shared Drive, berikan minimal peran Kontributor."
         else:
