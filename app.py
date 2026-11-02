@@ -5678,7 +5678,6 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     _growth_avg["Growth Sales %"]=_growth_avg["Average 2026"].div(_growth_avg["Average 2025"].replace(0,float("nan"))).sub(1).mul(100)
                     _growth_avg=_growth_avg[["Average 2025","Average 2026","Growth Sales %"]].reset_index().rename(columns={principal_col:"Principal ID"})
                     _quad_pid=_quad_pid.merge(_growth_avg,on="Principal ID",how="left")
-                    _quad_pid["Nama Label"]=_quad_pid["Nama Principal"].map(lambda name:name if len(name)<=16 else name[:15].rstrip()+"…")
                     def _compact_quadrant_amount(value):
                         value=float(value)
                         if abs(value)>=1_000_000:
@@ -5691,12 +5690,12 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     _growth_no_base=int(_quad_pid["Growth Sales %"].isna().sum())
                     _quad_pid=_quad_pid.dropna(subset=["A/T %","Growth Sales %"])
                     _scatter=alt.Chart(_quad_pid).mark_circle(size=100,opacity=.82,stroke="#FFFFFF",strokeWidth=1).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Growth Sales %:Q",title="Growth Sales · Rerata Bulanan 2025 → 2026 (%)",axis=alt.Axis(format=".0f",labelExpr="datum.value + '%'",tickCount=5)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#0F9B8E"),alt.value("#335A9F")),tooltip=[alt.Tooltip("Principal ID:N",title="Principal ID"),alt.Tooltip("Nama Principal:N",title="Nama Principal"),alt.Tooltip("Average 2025 Ringkas:N",title="Avg sales/bulan 2025"),alt.Tooltip("Average 2026 Ringkas:N",title="Avg sales/bulan 2026"),alt.Tooltip("Growth Sales %:Q",title="Growth sales",format="+.1f"),alt.Tooltip("A/T %:Q",title="A/T",format=".1f"),alt.Tooltip("Actual Ringkas:N",title="Actual bulan terpilih"),alt.Tooltip("Target Ringkas:N",title="Target bulan terpilih"),alt.Tooltip("Gap Ringkas:N",title="Gap bulan terpilih")])
-                    _name_labels=alt.Chart(_quad_pid).mark_text(align="left",dx=7,dy=-7,fontSize=9,color="#526176",limit=105,ellipsis="…").encode(x="A/T %:Q",y="Growth Sales %:Q",text="Nama Label:N")
+                    _name_labels=alt.Chart(_quad_pid).mark_text(align="left",dx=7,dy=-7,fontSize=9,color="#526176",limit=105,ellipsis="…").encode(x="A/T %:Q",y="Growth Sales %:Q",text="Principal ID:N")
                     _vx=alt.Chart(pd.DataFrame({"x":[100]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(x="x:Q")
                     _hy=alt.Chart(pd.DataFrame({"Growth Sales %":[0]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(y="Growth Sales %:Q")
                     _quad_chart=alt.layer(_scatter,_name_labels,_vx,_hy).properties(height=280,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
                     st.altair_chart(_quad_chart,width="stretch",key=f"performance_quadrant_{abs(hash(_perf_filter_signature))}")
-                    st.caption(f"Growth = rerata sales bulanan Jan–{MONTHS.get(int(selected_month),str(selected_month))} 2026 dibanding periode sama 2025. Label di titik adalah nama principal; arahkan kursor untuk ID dan detail Rb/Jt."+(f" {_growth_no_base} principal tanpa sales 2025 tidak bisa dihitung persentase growth-nya." if _growth_no_base else ""))
+                    st.caption(f"Growth = rerata sales bulanan Jan–{MONTHS.get(int(selected_month),str(selected_month))} 2026 dibanding periode sama 2025. Label di titik adalah Principal ID; nama principal dan detail Rb/Jt tersedia saat diarahkan."+(f" {_growth_no_base} principal tanpa sales 2025 tidak bisa dihitung persentase growth-nya." if _growth_no_base else ""))
                 else:
                     st.info("Kolom Principal ID tidak tersedia pada database aktif.")
             with _layout_cols[1]:
