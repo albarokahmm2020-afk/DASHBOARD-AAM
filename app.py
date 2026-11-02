@@ -2879,53 +2879,10 @@ if main_section=="Breakdown Target":
     with _bt_controls[3]:
         st.markdown(f"<div class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(ACTIVE_BRANCH_NAME)} · {html.escape(ACTIVE_BRANCH_CODE)}</div>",unsafe_allow_html=True)
     _bt_upload=st.file_uploader("Unggah file mentah target (.xlsx)",type=["xlsx"],key="breakdown_target_upload",help="Kolom utama: YEAR_ID, MONTH_ID, ITEM_SUBLINI, SUBLINI_PRODUCT, SALESPERSON_POSITION, dan TARGET_REKOMENDASI_HO. Principal ID akan dicocokkan dari riwayat database.")
-    _bt_source_bytes=None; _bt_source_name=""
-    if _bt_upload is not None:
-        _bt_source_bytes=_bt_upload.getvalue(); _bt_source_name=_bt_upload.name
-    else:
-        _bt_saved_name=f"target_breakdown_raw_{ACTIVE_BRANCH_CODE}_{int(_bt_year)}_{int(_bt_month):02d}.xlsx"
-        _bt_saved_path=APP_DIR/"target_breakdown"/_bt_saved_name
-        _bt_drive_available=bool(st.secrets.get("gcp_service_account"))
-        if _bt_drive_available and st.button("Muat file mentah yang tersimpan di Google Drive",key="load_breakdown_target_drive",width="stretch"):
-            try:
-                if _drive_download_to_path(_bt_saved_name,_bt_saved_path,"target_breakdown",ACTIVE_BRANCH_CODE):
-                    st.session_state["_breakdown_target_loaded_file"]=_bt_saved_name
-                    st.success(f"File {_bt_saved_name} berhasil dimuat dari Google Drive.")
-                    st.rerun()
-                st.info("Belum ada file mentah untuk bulan tersebut di Google Drive.")
-            except Exception as _bt_load_error:
-                st.error(f"File mentah gagal dimuat dari Google Drive: {_bt_load_error}")
-        if st.session_state.get("_breakdown_target_loaded_file")==_bt_saved_name and _bt_saved_path.exists():
-            _bt_source_bytes=_bt_saved_path.read_bytes(); _bt_source_name=_bt_saved_name
-    if _bt_upload is not None and _bt_source_bytes:
-        _bt_fingerprint=hashlib.sha256(_bt_source_bytes).hexdigest()
-        if st.session_state.get("_breakdown_target_raw_fingerprint")!=_bt_fingerprint:
-            try:
-                _bt_uploaded_table=read_uploaded_file(_bt_upload.name,_bt_source_bytes) if _bt_upload is not None else read_uploaded_file(_bt_source_name,_bt_source_bytes)
-                _bt_uploaded_cols=_breakdown_target_columns(_bt_uploaded_table)
-                _bt_file_year=int(pd.to_numeric(_bt_uploaded_table[_bt_uploaded_cols["year"]],errors="coerce").dropna().iloc[0]) if _bt_uploaded_cols.get("year") and pd.to_numeric(_bt_uploaded_table[_bt_uploaded_cols["year"]],errors="coerce").notna().any() else int(_bt_year)
-                _bt_file_month=int(pd.to_numeric(_bt_uploaded_table[_bt_uploaded_cols["month"]],errors="coerce").dropna().iloc[0]) if _bt_uploaded_cols.get("month") and pd.to_numeric(_bt_uploaded_table[_bt_uploaded_cols["month"]],errors="coerce").notna().any() else int(_bt_month)
-                _bt_source_path=APP_DIR/"target_breakdown"/_bt_upload.name
-                _bt_source_path.parent.mkdir(parents=True,exist_ok=True)
-                _bt_source_path.write_bytes(_bt_source_bytes)
-                if st.secrets.get("gcp_service_account"):
-                    _bt_raw_drive_name=f"target_breakdown_raw_{ACTIVE_BRANCH_CODE}_{_bt_file_year}_{_bt_file_month:02d}.xlsx"
-                    _drive_upload_bytes(_bt_raw_drive_name,_bt_source_bytes,
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "target_breakdown",ACTIVE_BRANCH_CODE)
-                    st.success("File mentah berhasil disimpan di Google Drive dan salinan kerja lokal.")
-                else:
-                    st.info("File mentah tersimpan pada sesi kerja lokal. Google Drive belum dapat ditulis karena kredensial Drive tidak tersedia.")
-                st.session_state["_breakdown_target_raw_fingerprint"]=_bt_fingerprint
-            except Exception as _bt_save_error:
-                # The local copy is already written before Drive is attempted.
-                # Avoid repeating a red upload error on every Streamlit rerun;
-                # processing and export remain available while access is fixed.
-                st.session_state["_breakdown_target_raw_fingerprint"]=_bt_fingerprint
-                st.warning(f"File mentah tersimpan di workspace aplikasi, tetapi belum tersinkron ke Google Drive: {_bt_save_error}")
-                if st.button("Coba simpan ulang ke Google Drive",key=f"retry_breakdown_target_drive_{_bt_file_year}_{_bt_file_month}"):
-                    st.session_state.pop("_breakdown_target_raw_fingerprint",None)
-                    st.rerun()
+    _bt_source_bytes=_bt_upload.getvalue() if _bt_upload is not None else None
+    _bt_source_name=_bt_upload.name if _bt_upload is not None else ""
+    if _bt_upload is None:
+        st.caption("File diproses sementara di sesi ini. Unduh hasil sebelum meninggalkan dashboard.")
     if _bt_source_bytes:
         try:
             _bt_source_df=read_uploaded_file(_bt_source_name,_bt_source_bytes)
@@ -2963,23 +2920,14 @@ if main_section=="Breakdown Target":
             _bt_reconciliation=_bt_result.groupby("SUBLINI_PRODUCT",as_index=False).agg(TARGET_CABANG=("TARGET_CABANG","sum"))
             _bt_ho_export=pd.DataFrame([{"SUBLINI_PRODUCT":subline,"TARGET_REKOMENDASI_HO":value} for subline,value in _bt_expected_by_subline.items()])
             _bt_reconciliation=_bt_reconciliation.merge(_bt_ho_export,on="SUBLINI_PRODUCT",how="left")
+            _bt_input_sheet=pd.ExcelFile(io.BytesIO(_bt_source_bytes)).sheet_names[0]
+            _bt_output_sheet=str(_bt_input_sheet).strip()[:31] or "Breakdown Target"
             with pd.ExcelWriter(_bt_buffer,engine="openpyxl") as _bt_writer:
-                _bt_result.to_excel(_bt_writer,index=False,sheet_name="Breakdown Target")
+                _bt_result.to_excel(_bt_writer,index=False,sheet_name=_bt_output_sheet)
                 _bt_reconciliation.to_excel(_bt_writer,index=False,sheet_name="Rekonsiliasi")
             _bt_export_bytes=_bt_buffer.getvalue()
             _bt_export_name=f"breakdown_target_{ACTIVE_BRANCH_CODE}_{_bt_result_year}_{_bt_result_month:02d}.xlsx"
-            _bt_export_col1,_bt_export_col2=st.columns([1,1])
-            with _bt_export_col1:
-                st.download_button("⬇ Ekspor hasil breakdown (.xlsx)",data=_bt_export_bytes,file_name=_bt_export_name,mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",key="download_breakdown_target",width="stretch")
-            with _bt_export_col2:
-                if st.button("Terbitkan & simpan hasil ke Google Drive",key="publish_breakdown_target",type="primary",width="stretch"):
-                    try:
-                        _bt_export_path=APP_DIR/"target_breakdown"/_bt_export_name
-                        _bt_export_path.parent.mkdir(parents=True,exist_ok=True); _bt_export_path.write_bytes(_bt_export_bytes)
-                        _drive_file_id_created=_drive_upload_bytes(_bt_export_name,_bt_export_bytes,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","exports",ACTIVE_BRANCH_CODE)
-                        st.success(f"Hasil diterbitkan dan tersimpan di Google Drive. File ID: {_drive_file_id_created}")
-                    except Exception as _bt_publish_error:
-                        st.error(f"Hasil tersedia untuk diunduh, tetapi gagal disimpan ke Google Drive: {_bt_publish_error}")
+            st.download_button("⬇ Unduh file hasil breakdown (.xlsx)",data=_bt_export_bytes,file_name=_bt_export_name,mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",key="download_breakdown_target",type="primary",width="stretch")
             st.caption(f"Periode {MONTHS[_bt_result_month]} {int(_bt_result_year)} · Basis: {_bt_used_basis} · Rata-rata dihitung dari tiga bulan lengkap sebelum bulan target.")
         except Exception as _bt_error:
             st.error(f"File breakdown target belum dapat diproses: {_bt_error}")
