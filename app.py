@@ -1384,7 +1384,11 @@ def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_
         candidates=history
         item_key=str(line["ITEM_SUBLINI"].dropna().iloc[0]).strip().casefold().removesuffix(".0") if "ITEM_SUBLINI" in line and line["ITEM_SUBLINI"].notna().any() else ""
         if item_key and candidates["_bt_item"].notna().any():
-            candidates=candidates[candidates["_bt_item"].eq(item_key)]
+            item_candidates=candidates[candidates["_bt_item"].eq(item_key)]
+            if not item_candidates.empty:
+                candidates=item_candidates
+            elif candidates["_bt_subline"].notna().any():
+                candidates=candidates[candidates["_bt_subline"].eq(subline.casefold())]
         elif candidates["_bt_subline"].notna().any():
             candidates=candidates[candidates["_bt_subline"].eq(subline.casefold())]
 
