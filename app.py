@@ -1633,9 +1633,9 @@ def _normalize_principal_target_allocations(allocations, seller_adjustments=None
     return result
 
 def _build_breakdown_seller_summary(history_frame, allocations, year, month, selected_business_group=None):
-    """Summarize seller target against average gross sales and prior-month A/T."""
+    """Summarize seller target against average and monthly actual gross sales."""
     seller_col=col(history_frame,"salesperson"); date_col=col(history_frame,"date")
-    sales_col=col(history_frame,"sales"); target_col=col(history_frame,"target_value")
+    sales_col=col(history_frame,"sales")
     if not seller_col or not date_col or not sales_col:
         raise ValueError("Kolom tanggal, Sales Person Title, dan Sales Value Gross wajib tersedia untuk summary.")
     target_period=int(year)*12+int(month)-1
@@ -1653,8 +1653,7 @@ def _build_breakdown_seller_summary(history_frame, allocations, year, month, sel
         history=history[history[bg_col].astype("string").str.strip().eq(str(selected_business_group).strip())]
     history["_seller"]=history[seller_col].astype("string").str.strip()
     history["_sales"]=pd.to_numeric(history[sales_col],errors="coerce").fillna(0)
-    history["_target"]=pd.to_numeric(history[target_col],errors="coerce").fillna(0) if target_col else 0.0
-    monthly=history.groupby(["_seller","_period"],dropna=False)[["_sales","_target"]].sum()
+    monthly=history.groupby(["_seller","_period"],dropna=False)["_sales"].sum()
     breakdown=allocations.copy()
     breakdown["_seller"]=breakdown["SALESPERSON_POSITION"].astype("string").str.strip()
     breakdown["_breakdown_target"]=pd.to_numeric(breakdown["TARGET_CABANG"],errors="coerce").fillna(0)
@@ -1662,17 +1661,15 @@ def _build_breakdown_seller_summary(history_frame, allocations, year, month, sel
     rows=[]
     for _,seller_row in breakdown.iterrows():
         seller=seller_row["_seller"]
-        seller_months=monthly.loc[seller] if seller in monthly.index.get_level_values(0) else pd.DataFrame(columns=["_sales","_target"])
-        sales_by_period={int(period):float(row["_sales"]) for period,row in seller_months.iterrows()} if not seller_months.empty else {}
-        target_by_period={int(period):float(row["_target"]) for period,row in seller_months.iterrows()} if not seller_months.empty else {}
+        seller_months=monthly.loc[seller] if seller in monthly.index.get_level_values(0) else pd.Series(dtype="float64")
+        sales_by_period={int(period):float(amount) for period,amount in seller_months.items()} if not seller_months.empty else {}
         average=sum(sales_by_period.get(period,0.0) for period in prior)/3
         breakdown_target=float(seller_row["_breakdown_target"])
         row={"Sales Person Title":str(seller),"Avg 3 Month":average,"Hasil Breakdown":breakdown_target,"Adjust Target":0.0,"Total Setelah Adjust":breakdown_target}
         for period in prior:
             month_number=(period%12)+1
             month_name=MONTHS[month_number]
-            actual=sales_by_period.get(period,0.0); target=target_by_period.get(period,0.0)
-            row[f"A/T {month_name}"]=actual/target*100 if target else None
+            row[f"Actual Sales Gross {month_name}"]=sales_by_period.get(period,0.0)
         row["Growth vs Avg 3 Month"]=(breakdown_target/average-1)*100 if average else None
         rows.append(row)
     return pd.DataFrame(rows)
@@ -3384,10 +3381,10 @@ if main_section=="Breakdown Target":
                     if not _bt_balance_rows.empty:
                         st.info("Penyesuaian bersih diimbangi otomatis pada Sales Person lain agar total TARGET_CABANG tetap sama dengan TARGET_REKOMENDASI_HO. Lihat kolom Adjust Target Efektif.")
                     _bt_summary["Growth vs Avg 3 Month"]=((_bt_summary["Total Setelah Adjust"]/_bt_summary["Avg 3 Month"]-1)*100).where(_bt_summary["Avg 3 Month"]>0)
-                    _bt_summary_columns=["Sales Person Title","Avg 3 Month","Hasil Breakdown",*[column for column in _bt_summary.columns if column.startswith("A/T ")],"Growth vs Avg 3 Month","Adjust Target","Adjust Target Efektif","Total Setelah Adjust"]
+                    _bt_summary_columns=["Sales Person Title","Avg 3 Month",*[column for column in _bt_summary.columns if column.startswith("Actual Sales Gross ")],"Hasil Breakdown","Growth vs Avg 3 Month","Adjust Target","Adjust Target Efektif","Total Setelah Adjust"]
                     _bt_summary=_bt_summary[_bt_summary_columns]
-                    _bt_summary_config={column:st.column_config.NumberColumn(column,step=1 if column=="Adjust Target" else None,format="%,.0f") for column in ["Avg 3 Month","Hasil Breakdown","Adjust Target","Adjust Target Efektif","Total Setelah Adjust"]}
-                    _bt_summary_config.update({column:st.column_config.NumberColumn(column,format="%.1f%%") for column in _bt_summary.columns if column.startswith("A/T ") or column=="Growth vs Avg 3 Month"})
+                    _bt_summary_config={column:st.column_config.NumberColumn(column,step=1 if column=="Adjust Target" else None,format="%,.0f") for column in ["Avg 3 Month",*[column for column in _bt_summary.columns if column.startswith("Actual Sales Gross ")],"Hasil Breakdown","Adjust Target","Adjust Target Efektif","Total Setelah Adjust"]}
+                    _bt_summary_config.update({column:st.column_config.NumberColumn(column,format="%.1f%%") for column in _bt_summary.columns if column=="Growth vs Avg 3 Month"})
                     _bt_summary_edited=st.data_editor(_bt_summary,key="bt_seller_summary_adjust",hide_index=True,width="stretch",height=300,num_rows="fixed",disabled=[column for column in _bt_summary.columns if column!="Adjust Target"],column_config=_bt_summary_config)
                     _bt_seller_adjustments={}
                     for _,_bt_summary_row in _bt_summary_edited.iterrows():
