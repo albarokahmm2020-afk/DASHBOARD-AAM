@@ -5665,8 +5665,20 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     _quad_pid["Principal ID"]=_quad_pid["Principal ID"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Tidak tercantum)").astype(str)
                     _quad_pid["Nama Principal"]=_quad_pid["Nama Principal"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Nama tidak tercantum)").astype(str)
                     _quad_pid["A/T %"]=_quad_pid["Actual"].div(_quad_pid["Target"].replace(0,float("nan")))*100
-                    _quad_pid["Kontribusi %"]=_quad_pid["Actual"].div(max(float(_quad_pid["Actual"].sum()),1))*100
                     _quad_pid["Gap"]=_quad_pid["Actual"]-_quad_pid["Target"]
+                    _growth_scope=perf[perf["_perf_year"].isin([2025,2026]) & perf["_perf_month"].le(int(selected_month))].copy()
+                    if selected_bg:
+                        _growth_scope=_growth_scope[_growth_scope[bg_col].astype(str).isin(selected_bg)]
+                    if selected_sp and sp_col:
+                        _growth_scope=_growth_scope[_growth_scope[sp_col].astype(str).isin(selected_sp)]
+                    _growth_monthly=_growth_scope.groupby([principal_col,"_perf_year","_perf_month"],dropna=False)["_perf_sales"].sum().reset_index()
+                    _growth_avg=_growth_monthly.pivot_table(index=principal_col,columns="_perf_year",values="_perf_sales",aggfunc="sum",fill_value=0).reindex(columns=[2025,2026],fill_value=0)
+                    _growth_avg["Average 2025"]=_growth_avg[2025]/max(int(selected_month),1)
+                    _growth_avg["Average 2026"]=_growth_avg[2026]/max(int(selected_month),1)
+                    _growth_avg["Growth Sales %"]=_growth_avg["Average 2026"].div(_growth_avg["Average 2025"].replace(0,float("nan"))).sub(1).mul(100)
+                    _growth_avg=_growth_avg[["Average 2025","Average 2026","Growth Sales %"]].reset_index().rename(columns={principal_col:"Principal ID"})
+                    _quad_pid=_quad_pid.merge(_growth_avg,on="Principal ID",how="left")
+                    _quad_pid["Nama Label"]=_quad_pid["Nama Principal"].map(lambda name:name if len(name)<=16 else name[:15].rstrip()+"…")
                     def _compact_quadrant_amount(value):
                         value=float(value)
                         if abs(value)>=1_000_000:
@@ -5674,16 +5686,17 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                         if abs(value)>=1_000:
                             return f"{value/1_000:,.0f} Rb"
                         return f"{value:,.0f}"
-                    for _raw,_display in [("Actual","Actual Ringkas"),("Target","Target Ringkas"),("Gap","Gap Ringkas")]:
+                    for _raw,_display in [("Actual","Actual Ringkas"),("Target","Target Ringkas"),("Average 2025","Average 2025 Ringkas"),("Average 2026","Average 2026 Ringkas"),("Gap","Gap Ringkas")]:
                         _quad_pid[_display]=_quad_pid[_raw].map(_compact_quadrant_amount)
-                    _quad_pid=_quad_pid.dropna(subset=["A/T %"])
-                    _median_pid=float(_quad_pid["Kontribusi %"].median()) if not _quad_pid.empty else 0
-                    _scatter=alt.Chart(_quad_pid).mark_circle(size=100,opacity=.82,stroke="#FFFFFF",strokeWidth=1).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Kontribusi %:Q",title="Kontribusi Cabang (%)",scale=alt.Scale(domainMin=0)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#0F9B8E"),alt.value("#335A9F")),tooltip=[alt.Tooltip("Principal ID:N",title="Principal ID"),alt.Tooltip("Nama Principal:N",title="Nama Principal"),alt.Tooltip("Actual Ringkas:N",title="Actual"),alt.Tooltip("Target Ringkas:N",title="Target"),alt.Tooltip("A/T %:Q",format=".1f"),alt.Tooltip("Kontribusi %:Q",format=".1f"),alt.Tooltip("Gap Ringkas:N",title="Gap")])
+                    _growth_no_base=int(_quad_pid["Growth Sales %"].isna().sum())
+                    _quad_pid=_quad_pid.dropna(subset=["A/T %","Growth Sales %"])
+                    _scatter=alt.Chart(_quad_pid).mark_circle(size=100,opacity=.82,stroke="#FFFFFF",strokeWidth=1).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Growth Sales %:Q",title="Growth Sales · Rerata Bulanan 2025 → 2026 (%)",axis=alt.Axis(format=".0f",labelExpr="datum.value + '%'",tickCount=5)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#0F9B8E"),alt.value("#335A9F")),tooltip=[alt.Tooltip("Principal ID:N",title="Principal ID"),alt.Tooltip("Nama Principal:N",title="Nama Principal"),alt.Tooltip("Average 2025 Ringkas:N",title="Avg sales/bulan 2025"),alt.Tooltip("Average 2026 Ringkas:N",title="Avg sales/bulan 2026"),alt.Tooltip("Growth Sales %:Q",title="Growth sales",format="+.1f"),alt.Tooltip("A/T %:Q",title="A/T",format=".1f"),alt.Tooltip("Actual Ringkas:N",title="Actual bulan terpilih"),alt.Tooltip("Target Ringkas:N",title="Target bulan terpilih"),alt.Tooltip("Gap Ringkas:N",title="Gap bulan terpilih")])
+                    _name_labels=alt.Chart(_quad_pid).mark_text(align="left",dx=7,dy=-7,fontSize=9,color="#526176",limit=105,ellipsis="…").encode(x="A/T %:Q",y="Growth Sales %:Q",text="Nama Label:N")
                     _vx=alt.Chart(pd.DataFrame({"x":[100]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(x="x:Q")
-                    _hy=alt.Chart(pd.DataFrame({"y":[_median_pid]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(y="y:Q")
-                    _quad_chart=alt.layer(_scatter,_vx,_hy).properties(height=250,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
+                    _hy=alt.Chart(pd.DataFrame({"Growth Sales %":[0]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(y="Growth Sales %:Q")
+                    _quad_chart=alt.layer(_scatter,_name_labels,_vx,_hy).properties(height=280,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
                     st.altair_chart(_quad_chart,width="stretch",key=f"performance_quadrant_{abs(hash(_perf_filter_signature))}")
-                    st.caption("Arahkan kursor ke titik untuk melihat Principal ID, nama principal, dan nominal Actual/Target/Gap dalam Rb atau Jt.")
+                    st.caption(f"Growth = rerata sales bulanan Jan–{MONTHS.get(int(selected_month),str(selected_month))} 2026 dibanding periode sama 2025. Label di titik adalah nama principal; arahkan kursor untuk ID dan detail Rb/Jt."+(f" {_growth_no_base} principal tanpa sales 2025 tidak bisa dihitung persentase growth-nya." if _growth_no_base else ""))
                 else:
                     st.info("Kolom Principal ID tidak tersedia pada database aktif.")
             with _layout_cols[1]:
