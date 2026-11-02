@@ -1510,6 +1510,30 @@ def _allocate_integer_amount(total, weights):
     sign=1 if rounded_total>=0 else -1
     return pd.Series([sign*int(value) for value in floors],index=getattr(weights,"index",range(len(floors))),dtype="int64")
 
+def _allocate_integer_capped(total, weights, capacities):
+    """Allocate an integer row total without exceeding remaining column totals."""
+    labels=list(getattr(weights,"index",range(len(weights))))
+    weight_values=pd.to_numeric(pd.Series(weights),errors="coerce").fillna(0).clip(lower=0).tolist()
+    capacity_values=[max(0,int(value)) for value in pd.to_numeric(pd.Series(capacities),errors="coerce").fillna(0).tolist()]
+    if len(weight_values)!=len(capacity_values):
+        raise ValueError("Bobot dan kapasitas alokasi tidak sama panjang.")
+    remaining=int(math.floor(abs(float(total))+0.5))
+    result=[0]*len(weight_values)
+    while remaining>0:
+        active=[index for index,value in enumerate(capacity_values) if value>0]
+        if not active:
+            raise ArithmeticError("Kapasitas item tidak cukup untuk menampung total target.")
+        shares=_allocate_integer_amount(remaining,pd.Series([weight_values[index] for index in active]))
+        used=0
+        for local_index,index in enumerate(active):
+            amount=min(int(shares.iloc[local_index]),capacity_values[index])
+            result[index]+=amount; capacity_values[index]-=amount; used+=amount
+        if used==0:
+            index=active[0]
+            result[index]+=1; capacity_values[index]-=1; used=1
+        remaining-=used
+    return pd.Series(result,index=labels,dtype="int64")
+
 def _normalize_principal_target_allocations(allocations, seller_adjustments=None):
     """Apply row and seller adjustments as weights while preserving each Principal total."""
     result=allocations.copy()
@@ -1727,15 +1751,24 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
         pid_indices=[idx for idx,value in enumerate(pid_values) if value==pid]
         item_groups={}
         for idx in pid_indices: item_groups.setdefault(item_values[idx],[]).append(idx)
-        cell_weights=pd.Series([max(0,value) for _,_,_,value in cells],index=[(seller,channel) for _,seller,channel,_ in cells],dtype="float64")
+        cell_keys=[(seller,channel) for _,seller,channel,_ in cells]
+        cell_weights=pd.Series([max(0,value) for _,_,_,value in cells],index=range(len(cells)),dtype="float64")
+        item_totals={item:int(pd.to_numeric(source.loc[indices,required["ho_target"]],errors="coerce").fillna(0).sum()) for item,indices in item_groups.items()}
+        principal_total=sum(item_totals.values())
+        cell_totals=_allocate_integer_amount(principal_total,cell_weights)
+        remaining_cells=cell_totals.tolist()
         for item,indices in item_groups.items():
-            item_target=int(pd.to_numeric(source.loc[indices,required["ho_target"]],errors="coerce").fillna(0).sum())
-            item_cells=_allocate_integer_amount(item_target,cell_weights)
-            for (seller,channel),cell_target in item_cells.items():
+            item_target=item_totals[item]
+            item_cells=_allocate_integer_capped(item_target,cell_weights,remaining_cells)
+            remaining_cells=[remaining_cells[index]-int(item_cells.iloc[index]) for index in range(len(remaining_cells))]
+            for cell_index,cell_target in item_cells.items():
+                seller,channel=cell_keys[cell_index]
                 cell_indices=[idx for idx in indices if norm_value(source.at[idx,required["salesperson"]])==seller and norm_value(source.at[idx,required["channel"]])==channel]
                 if not cell_indices: continue
                 raw_weights=pd.to_numeric(source.loc[cell_indices,required["ho_target"]],errors="coerce").fillna(0).clip(lower=0)
                 source.loc[cell_indices,required["branch_target"]]=_allocate_integer_amount(cell_target,raw_weights)
+        if any(remaining_cells):
+            raise ArithmeticError("Total breakdown Principal tidak sama dengan total item sublini.")
     # Add a recon line when a Principal is wholly absent from the raw file; no item mapping exists in that case.
     for pid,cells in target_cells_by_pid.items():
         if any(value==pid for value in row_principal_keys(source)): continue
