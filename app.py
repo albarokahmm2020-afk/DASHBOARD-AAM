@@ -3130,6 +3130,9 @@ if main_section=="Breakdown Target":
                     for _,_bt_summary_row in _bt_summary_edited.iterrows():
                         _bt_adjust_value=pd.to_numeric(_bt_summary_row["Adjust Target"],errors="coerce")
                         _bt_seller_adjustments[str(_bt_summary_row["Sales Person Title"])]=0.0 if pd.isna(_bt_adjust_value) else float(_bt_adjust_value)
+                    if _bt_seller_adjustments!=st.session_state.get("_bt_seller_adjustments",{}):
+                        st.session_state["_bt_seller_adjustments"]=_bt_seller_adjustments
+                        st.rerun()
                     st.session_state["_bt_seller_adjustments"]=_bt_seller_adjustments
                     _bt_edited["ADJUST_TARGET_SALESPERSON"]=0.0
                     for _bt_seller,_bt_adjust in _bt_seller_adjustments.items():
