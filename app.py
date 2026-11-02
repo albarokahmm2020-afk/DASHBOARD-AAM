@@ -1413,6 +1413,7 @@ def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_
         for title,amount in zip(titles,allocated):
             row=dict(template)
             row["SALESPERSON_POSITION"]=title
+            row["TARGET_REKOMENDASI_HO"]=target
             row["TARGET_CABANG"]=amount
             row["AVERAGE_3_BULAN"]=float(weights.get(title,0.0))
             row["PORSI_TARGET_%"]=amount/target*100 if target else 0.0
