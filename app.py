@@ -1551,29 +1551,49 @@ def _normalize_principal_target_allocations(allocations, seller_adjustments=None
     sellers=list(dict.fromkeys(seller_values.tolist()))
     base_seller=base.groupby(seller_values).sum().reindex(sellers,fill_value=0).astype("int64")
     requested={seller:int(math.floor(abs(float(value))+0.5))*(1 if float(value)>=0 else -1) for seller,value in (seller_adjustments or {}).items()}
-    desired=base_seller.copy()
-    for seller,adjustment in requested.items():
-        if seller in desired.index: desired.loc[seller]+=adjustment
-    negative=desired[desired<0]
-    if not negative.empty:
-        raise ValueError("Adjust Target melebihi target tersedia untuk: "+", ".join(negative.index.tolist()))
     groups=list(result.groupby(pid_cols,dropna=False,sort=False).groups.items())
     principal_totals={}
     for pid,indices in groups:
         vals=pd.to_numeric(result.loc[indices,"TARGET_PRINCIPAL"],errors="coerce").fillna(0)
         principal_totals[pid]=int(math.floor(abs(float(vals.iloc[0]))+0.5)) if not vals.empty else 0
     grand_total=sum(principal_totals.values())
+    def weighted_fallback():
+        fallback_weights=(base+row_adjust).clip(lower=0).astype("float64")
+        for seller,adjustment in requested.items():
+            mask=seller_values.eq(seller)
+            if mask.any() and adjustment:
+                fallback_weights.loc[mask]=(fallback_weights.loc[mask]+_allocate_integer_amount(adjustment,base.loc[mask])).clip(lower=0)
+        for pid,indices in groups:
+            weights=fallback_weights.loc[indices]
+            if float(weights.sum())<=0: weights=base.loc[indices]
+            if float(weights.sum())<=0: weights=pd.Series(1.0,index=indices)
+            result.loc[indices,"TARGET_CABANG"]=_allocate_integer_amount(principal_totals[pid],weights)
+            if "TARGET_SALESPERSON" in result.columns:
+                seller_totals=result.loc[indices].groupby(seller_values.loc[indices])["TARGET_CABANG"].sum()
+                for seller,total in seller_totals.items(): result.loc[indices[seller_values.loc[indices].eq(seller)],"TARGET_SALESPERSON"]=int(total)
+        result["ADJUST_TARGET_SALESPERSON"]=(pd.to_numeric(result["TARGET_CABANG"],errors="coerce").fillna(0)-base).astype("int64")
+        result.attrs["adjustment_limited"]=True
+        for column in ["TARGET_PRINCIPAL","TARGET_BREAKDOWN","ADJUST_TARGET","TARGET_SALESPERSON","TARGET_CABANG"]:
+            if column in result.columns: result[column]=pd.to_numeric(result[column],errors="coerce").fillna(0).round().astype("int64")
+        return result
+    desired=base_seller.copy()
+    for seller,adjustment in requested.items():
+        if seller in desired.index: desired.loc[seller]+=adjustment
+    negative=desired[desired<0]
+    if not negative.empty:
+        return weighted_fallback()
     difference=grand_total-int(desired.sum())
     balancing=[seller for seller in sellers if not requested.get(seller,0) and int(base_seller.get(seller,0))>0]
     if difference and not balancing:
-        raise ValueError("Total Adjust Target harus seimbang agar total TARGET_CABANG tetap sama dengan TARGET_REKOMENDASI_HO.")
+        return weighted_fallback()
     if difference>0:
         shares=_allocate_integer_amount(difference,base_seller.reindex(balancing,fill_value=0))
         for seller,amount in shares.items(): desired.loc[seller]+=int(amount)
     elif difference<0:
         reduce_total=-difference
         capacities=[int(desired.loc[seller]) for seller in balancing]
-        reductions=_allocate_integer_capped(reduce_total,base_seller.reindex(balancing,fill_value=0),capacities)
+        try: reductions=_allocate_integer_capped(reduce_total,base_seller.reindex(balancing,fill_value=0),capacities)
+        except ArithmeticError: return weighted_fallback()
         for seller,amount in reductions.items(): desired.loc[seller]-=int(amount)
     remaining=desired.astype("int64").to_dict()
     # Assign restrictive Principals first; each seller's final total stays exact.
@@ -1589,7 +1609,8 @@ def _normalize_principal_target_allocations(allocations, seller_adjustments=None
         if float(weights.sum())<=0:
             weights=pd.Series([1.0 if seller in available else 0.0 for seller in sellers],index=range(len(sellers)))
         capacities=[remaining[seller] if seller in available else 0 for seller in sellers]
-        seller_shares=_allocate_integer_capped(total,weights,capacities)
+        try: seller_shares=_allocate_integer_capped(total,weights,capacities)
+        except ArithmeticError: return weighted_fallback()
         principal_seller[pid]={seller:int(seller_shares.iloc[index]) for index,seller in enumerate(sellers) if int(seller_shares.iloc[index])>0 or seller in available}
         for seller,amount in principal_seller[pid].items(): remaining[seller]-=amount
     unallocated={seller:amount for seller,amount in remaining.items() if amount}
@@ -3333,6 +3354,8 @@ if main_section=="Breakdown Target":
                     except Exception as _bt_adjust_error:
                         st.error(f"Adjust Target gagal dibagikan: {_bt_adjust_error}")
                         st.stop()
+                    if _bt_final_allocations.attrs.get("adjustment_limited"):
+                        st.warning("Penyesuaian tepat melebihi kombinasi Principal ID/Sales Person yang tersedia. Sistem membagi ulang sebagai bobot kontribusi; total TARGET_CABANG tetap sama dengan HO.")
                     _bt_target_check=_bt_final_allocations.groupby("PRINCIPLE ID",dropna=False).agg(Breakdown=("TARGET_CABANG","sum"),Target=("TARGET_PRINCIPAL","first"))
                     _bt_target_check["Selisih"]=_bt_target_check["Breakdown"]-_bt_target_check["Target"]
                     _bt_target_mismatch=_bt_target_check[_bt_target_check["Selisih"]!=0]
