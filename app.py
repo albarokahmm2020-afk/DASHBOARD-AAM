@@ -1532,17 +1532,15 @@ def _build_breakdown_seller_summary(history_frame, allocations, year, month, sel
     return pd.DataFrame(rows)
 
 def _prepare_principal_channel_breakdown(history_frame, year, month, principal_targets, average_basis="Sales Value Gross", selected_business_group=None):
-    """Allocate manually entered Principal targets to sellers and outlet channels by 3-month history."""
+    """Allocate each Principal target by seller contribution, then channel contribution."""
     title_col=col(history_frame,"salesperson"); principal_col=col(history_frame,"principal")
     channel_col=col(history_frame,"channel_group"); date_col=col(history_frame,"date")
-    sales_col=col(history_frame,"sales"); customer_col=col(history_frame,"customer")
+    sales_col=col(history_frame,"sales")
     business_col=col(history_frame,"business_group")
     if not all([title_col,principal_col,channel_col,date_col]):
         raise ValueError("Riwayat wajib memuat tanggal, Sales Person Title, Principal ID, dan Channel Outlet Group.")
-    if average_basis=="Sales Value Gross" and not sales_col:
+    if not sales_col:
         raise ValueError("Kolom Sales Value Gross tidak tersedia.")
-    if average_basis=="Jumlah relasi aktif" and not customer_col:
-        raise ValueError("Kolom Customer Name tidak tersedia.")
     target_period=int(year)*12+int(month)-1
     prior=[target_period-i for i in (1,2,3)]
     ycol=col(history_frame,"year"); mcol=col(history_frame,"month")
@@ -1557,8 +1555,7 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     hist["_seller"]=hist[title_col].astype("string").str.strip()
     hist["_channel"]=hist[channel_col].astype("string").str.strip()
     hist=hist[hist["_pid"].notna()&hist["_seller"].notna()&hist["_channel"].notna()].copy()
-    if average_basis=="Sales Value Gross": hist["_weight"]=pd.to_numeric(hist[sales_col],errors="coerce").fillna(0).clip(lower=0)
-    else: hist["_weight"]=hist[customer_col].astype("string").str.strip().where(hist[customer_col].notna(),pd.NA)
+    hist["_weight"]=pd.to_numeric(hist[sales_col],errors="coerce").fillna(0).clip(lower=0)
     rows=[]; skipped_no_history=[]; skipped_no_weight=[]
     for _,target in principal_targets.iterrows():
         pid=str(target["PRINCIPLE ID"]).strip(); total=float(pd.to_numeric(target["TARGET_PRINCIPAL"],errors="coerce") or 0)
@@ -1567,16 +1564,24 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
         if subset.empty:
             skipped_no_history.append(pid)
             continue
-        if average_basis=="Sales Value Gross": weights=subset.groupby(["_seller","_channel"],observed=True)["_weight"].sum()
-        else: weights=subset.groupby(["_seller","_channel"],observed=True)["_weight"].nunique()
-        weights=weights.clip(lower=0); denom=float(weights.sum())
+        seller_weights=subset.groupby("_seller",observed=True)["_weight"].sum().clip(lower=0)
+        denom=float(seller_weights.sum())
         if denom<=0:
             skipped_no_weight.append(pid)
             continue
-        for (seller,channel),weight in weights.items():
-            base=total*float(weight)/denom
-            rows.append({"BUSINESS_GROUP":str(selected_business_group or (hist[business_col].dropna().iloc[0] if business_col and hist[business_col].notna().any() else "")),"PRINCIPLE ID":pid,"PRINCIPAL_NAME":str(target.get("PRINCIPAL_NAME",pid)),"SALESPERSON_POSITION":seller,"CHANNEL_OUTLET_GROUP":channel,"TARGET_PRINCIPAL":total,"AVERAGE_3_BULAN":float(weight)/3,"PORSI_%":float(weight)/denom*100,"TARGET_BREAKDOWN":base,"ADJUST_TARGET":0.0,"TARGET_CABANG":base})
-    result=pd.DataFrame(rows,columns=["BUSINESS_GROUP","PRINCIPLE ID","PRINCIPAL_NAME","SALESPERSON_POSITION","CHANNEL_OUTLET_GROUP","TARGET_PRINCIPAL","AVERAGE_3_BULAN","PORSI_%","TARGET_BREAKDOWN","ADJUST_TARGET","TARGET_CABANG"])
+        for seller,seller_weight in seller_weights.items():
+            seller_history=subset[subset["_seller"].eq(seller)]
+            channel_weights=seller_history.groupby("_channel",observed=True)["_weight"].sum().clip(lower=0)
+            seller_total=float(channel_weights.sum())
+            if seller_total<=0:
+                continue
+            seller_share=float(seller_weight)/denom
+            seller_target=total*seller_share
+            for channel,channel_weight in channel_weights.items():
+                channel_share=float(channel_weight)/seller_total
+                base=seller_target*channel_share
+                rows.append({"BUSINESS_GROUP":str(selected_business_group or (hist[business_col].dropna().iloc[0] if business_col and hist[business_col].notna().any() else "")),"PRINCIPLE ID":pid,"PRINCIPAL_NAME":str(target.get("PRINCIPAL_NAME",pid)),"SALESPERSON_POSITION":seller,"KONTRIBUSI_SALESPERSON_%":seller_share*100,"TARGET_SALESPERSON":seller_target,"CHANNEL_OUTLET_GROUP":channel,"KONTRIBUSI_CHANNEL_%":channel_share*100,"TARGET_PRINCIPAL":total,"AVERAGE_3_BULAN":float(channel_weight)/3,"PORSI_%":float(channel_weight)/denom*100,"TARGET_BREAKDOWN":base,"ADJUST_TARGET":0.0,"TARGET_CABANG":base})
+    result=pd.DataFrame(rows,columns=["BUSINESS_GROUP","PRINCIPLE ID","PRINCIPAL_NAME","SALESPERSON_POSITION","KONTRIBUSI_SALESPERSON_%","TARGET_SALESPERSON","CHANNEL_OUTLET_GROUP","KONTRIBUSI_CHANNEL_%","TARGET_PRINCIPAL","AVERAGE_3_BULAN","PORSI_%","TARGET_BREAKDOWN","ADJUST_TARGET","TARGET_CABANG"])
     result.attrs["skipped_no_history"]=skipped_no_history
     result.attrs["skipped_no_weight"]=skipped_no_weight
     return result
@@ -3031,17 +3036,17 @@ if df is None:
 if main_section=="Breakdown Target":
     st.markdown("<div class='score-heading'>◇ BREAKDOWN TARGET</div>",unsafe_allow_html=True)
     st.markdown("### Breakdown Target · Input Principal lalu File Mentah")
-    st.caption("Tahap 1: input target bulanan per Principal ID. Sistem membagi target ke Sales Person Title dan Channel Outlet Group dari rata-rata 3 bulan. Sesuaikan kolom ADJUST_TARGET. Tahap 2: unggah file mentah untuk mengisi TARGET_CABANG dan ekspor.")
+    st.caption("Tahap 1: input target per Principal ID. Target dibagi ke Sales Person Title berdasarkan kontribusi Sales Value Gross tiga bulan, lalu dibagi ke Channel Outlet Group memakai kontribusi yang sama. Sesuaikan ADJUST_TARGET. Tahap 2: unggah file mentah untuk mengisi TARGET_CABANG dan ekspor.")
     _bt_tabs=st.tabs(["1 · Breakdown Principal", "2 · File Mentah Target"])
     with _bt_tabs[0]:
-        _bt_controls=st.columns(5,gap="medium")
+        _bt_controls=st.columns(4,gap="medium")
         _bt_year=_bt_controls[0].number_input("Tahun target",2000,2100,int(pd.Timestamp.now().year),key="breakdown_target_year")
         _bt_month=_bt_controls[1].selectbox("Bulan target",list(range(1,13)),index=int(pd.Timestamp.now().month)-1,format_func=lambda x:MONTHS[int(x)],key="breakdown_target_month")
-        _bt_basis=_bt_controls[2].selectbox("Dasar rata-rata 3 bulan",["Sales Value Gross","Jumlah relasi aktif"],key="breakdown_target_basis")
+        _bt_basis="Sales Value Gross"
         _bt_bg_col=col(df,"business_group")
         _bt_bg_options=sorted(df[_bt_bg_col].dropna().astype(str).str.strip().unique()) if _bt_bg_col else []
-        _bt_selected_bg=_bt_controls[3].selectbox("Business Group",_bt_bg_options,key="breakdown_target_business_group") if _bt_bg_options else ""
-        _bt_controls[4].markdown(f"<div class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(ACTIVE_BRANCH_NAME)} · {html.escape(ACTIVE_BRANCH_CODE)}</div>",unsafe_allow_html=True)
+        _bt_selected_bg=_bt_controls[2].selectbox("Business Group",_bt_bg_options,key="breakdown_target_business_group") if _bt_bg_options else ""
+        _bt_controls[3].markdown(f"<div class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(ACTIVE_BRANCH_NAME)} · {html.escape(ACTIVE_BRANCH_CODE)}</div>",unsafe_allow_html=True)
         _bt_scope=df[df[_bt_bg_col].astype(str).str.strip().eq(_bt_selected_bg)].copy() if _bt_bg_col and _bt_selected_bg else df
         _bt_pid_col=col(_bt_scope,"principal"); _bt_name_col=col(_bt_scope,"principal_name")
         if not _bt_pid_col:
