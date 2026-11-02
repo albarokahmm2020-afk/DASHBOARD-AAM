@@ -1619,29 +1619,73 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     return result
 
 def _apply_principal_breakdown_to_raw(raw_frame, allocations):
-    """Write adjusted seller × Principal × channel allocations into raw TARGET_CABANG rows."""
+    """Match or add raw target rows, then balance TARGET_CABANG to TARGET_REKOMENDASI_HO per Principal."""
     source=raw_frame.copy(); cols=_breakdown_target_columns(source)
-    required={"salesperson":cols.get("salesperson"),"principal":cols.get("principal"),"channel":cols.get("channel"),"branch_target":cols.get("branch_target")}
+    required={"salesperson":cols.get("salesperson"),"principal":cols.get("principal"),"channel":cols.get("channel"),"branch_target":cols.get("branch_target"),"ho_target":cols.get("ho_target")}
     if "BUSINESS_GROUP" in allocations.columns: required["business_group"]=cols.get("business_group")
     missing=[name for name,value in required.items() if not value]
     if missing: raise ValueError("Kolom file mentah wajib tidak ditemukan: "+", ".join(missing))
     key_order=["business_group","salesperson","principal","channel"] if "business_group" in required else ["salesperson","principal","channel"]
     key_cols=[required[k] for k in key_order]
     key_names=[{"business_group":"BUSINESS_GROUP","salesperson":"SALESPERSON_POSITION","principal":"PRINCIPLE ID","channel":"CHANNEL_OUTLET_GROUP"}[k] for k in key_order]
-    def norm(series): return series.astype("string").fillna("").str.strip().str.casefold()
+    principal_order=[k for k in ["business_group","principal"] if k in key_order]
+    principal_cols=[required[k] for k in principal_order]
+    def norm_value(value): return "" if pd.isna(value) else str(value).strip().casefold()
     target=allocations.groupby(key_names,as_index=False,dropna=False)["TARGET_CABANG"].sum()
-    lookup={tuple(str(v).strip().casefold() for v in row[:len(key_names)]):float(row[len(key_names)]) for row in target.itertuples(index=False,name=None)}
-    raw_keys=list(zip(*(norm(source[c]).tolist() for c in key_cols)))
-    source["_allocation_total"]=[lookup.get(tuple(k),0.0) for k in raw_keys]
-    source["_raw_weight"]=pd.to_numeric(source[cols.get("ho_target")],errors="coerce").fillna(0).clip(lower=0) if cols.get("ho_target") else 1.0
-    temp_keys=[f"_k{i}" for i in range(len(key_cols))]
-    keys=pd.DataFrame(raw_keys,index=source.index,columns=temp_keys)
-    source=source.join(keys)
-    denom=source.groupby(temp_keys,dropna=False)["_raw_weight"].transform("sum")
-    count=source.groupby(temp_keys,dropna=False)["_raw_weight"].transform("size")
-    source[required["branch_target"]]=source["_allocation_total"]*source["_raw_weight"].div(denom.where(denom>0,count))
-    return source.drop(columns=["_allocation_total","_raw_weight"]+temp_keys)
-
+    target_records=list(target.to_dict("records"))
+    def target_key(row): return tuple(norm_value(row[name]) for name in key_names)
+    def principal_key(row): return tuple(norm_value(row[name]) for name in (["BUSINESS_GROUP","PRINCIPLE ID"] if "BUSINESS_GROUP" in principal_order else ["PRINCIPLE ID"]))
+    target_lookup={target_key(row):float(row["TARGET_CABANG"]) for row in target_records}
+    target_pid_totals={}
+    for row in target_records:
+        pid_key=principal_key(row)
+        target_pid_totals[pid_key]=target_pid_totals.get(pid_key,0.0)+float(row["TARGET_CABANG"])
+    original_pids={tuple(norm_value(value) for value in row) for row in source[principal_cols].itertuples(index=False,name=None)}
+    existing_keys={tuple(norm_value(value) for value in row) for row in source[key_cols].itertuples(index=False,name=None)}
+    added_rows=[]
+    for row in target_records:
+        key_tuple=target_key(row)
+        if key_tuple in existing_keys:
+            continue
+        new_row={column:pd.NA for column in source.columns}
+        for raw_column,target_column in zip(key_cols,key_names):
+            new_row[raw_column]=row[target_column]
+        pid_key=principal_key(row)
+        new_row[required["ho_target"]]=float(row["TARGET_CABANG"]) if pid_key not in original_pids else 0.0
+        new_row[required["branch_target"]]=0.0
+        added_rows.append(new_row)
+        existing_keys.add(key_tuple)
+    if added_rows:
+        source=pd.concat([source,pd.DataFrame(added_rows,columns=source.columns)],ignore_index=True)
+    row_keys=[tuple(norm_value(value) for value in row) for row in source[key_cols].itertuples(index=False,name=None)]
+    row_pid_keys=[tuple(norm_value(value) for value in row) for row in source[principal_cols].itertuples(index=False,name=None)]
+    principal_ho_totals={}
+    for pid_key,value in zip(row_pid_keys,pd.to_numeric(source[required["ho_target"]],errors="coerce").fillna(0)):
+        principal_ho_totals[pid_key]=principal_ho_totals.get(pid_key,0.0)+float(value)
+    scale_by_pid={pid_key:(principal_ho_totals.get(pid_key,0.0)/total if total else 0.0) for pid_key,total in target_pid_totals.items()}
+    target_lookup={target_key(row):float(row["TARGET_CABANG"])*scale_by_pid.get(principal_key(row),0.0) for row in target_records}
+    source[required["branch_target"]]=0.0
+    source["_allocation_key"]=row_keys
+    source["_principal_key"]=row_pid_keys
+    source["_raw_weight"]=pd.to_numeric(source[required["ho_target"]],errors="coerce").fillna(0).clip(lower=0)
+    for key,indices in source.groupby("_allocation_key",dropna=False,sort=False).groups.items():
+        pid_key=source.loc[list(indices),"_principal_key"].iloc[0]
+        if key in target_lookup:
+            group_target=target_lookup[key]
+            weights=source.loc[indices,"_raw_weight"]
+            denominator=float(weights.sum())
+            shares=weights/denominator if denominator>0 else pd.Series(1/len(indices),index=indices)
+            source.loc[indices,required["branch_target"]]=group_target*shares
+        elif pid_key not in target_pid_totals:
+            source.loc[indices,required["branch_target"]]=pd.to_numeric(source.loc[indices,required["ho_target"]],errors="coerce").fillna(0)
+    source=source.drop(columns=["_allocation_key","_principal_key","_raw_weight"])
+    row_pid_series=pd.Series(row_pid_keys,index=source.index)
+    for pid_key,ho_total in principal_ho_totals.items():
+        mask=row_pid_series.map(lambda value:value==pid_key)
+        branch_total=float(pd.to_numeric(source.loc[mask,required["branch_target"]],errors="coerce").fillna(0).sum())
+        if not math.isclose(branch_total,float(ho_total),rel_tol=0,abs_tol=0.01):
+            raise ArithmeticError(f"TARGET_CABANG tidak seimbang dengan TARGET_REKOMENDASI_HO untuk Principal ID {pid_key[-1]}.")
+    return source
 
 def filter_options(df,kind):
     c=col(df,kind)
@@ -3185,6 +3229,16 @@ if main_section=="Breakdown Target":
                 _bt_raw_bytes=_bt_raw_upload.getvalue()
                 _bt_raw_df=read_uploaded_file(_bt_raw_upload.name,_bt_raw_bytes)
                 _bt_final=_apply_principal_breakdown_to_raw(_bt_raw_df,st.session_state["_bt_allocations"])
+                _bt_added_rows=len(_bt_final)-len(_bt_raw_df)
+                if _bt_added_rows>0:
+                    st.info(f"{_bt_added_rows:,} baris Sales Person Title · Principal ID · Channel yang belum ada ditambahkan dari hasil breakdown.")
+                _bt_final_cols=_breakdown_target_columns(_bt_final)
+                _bt_recon_dims=[_bt_final_cols["business_group"],_bt_final_cols["principal"]] if _bt_final_cols["business_group"] else [_bt_final_cols["principal"]]
+                _bt_recon=_bt_final.groupby(_bt_recon_dims,dropna=False,as_index=False)[[_bt_final_cols["ho_target"],_bt_final_cols["branch_target"]]].sum()
+                _bt_recon=_bt_recon.rename(columns={_bt_final_cols["ho_target"]:"Total TARGET_REKOMENDASI_HO",_bt_final_cols["branch_target"]:"Total TARGET_CABANG"})
+                _bt_recon["Selisih"]=_bt_recon["Total TARGET_CABANG"]-_bt_recon["Total TARGET_REKOMENDASI_HO"]
+                st.markdown("#### Rekonsiliasi total per Principal ID")
+                st.dataframe(_bt_recon,width="stretch",height=320,hide_index=True)
                 st.dataframe(_bt_final,width="stretch",height=460,hide_index=True)
                 _bt_out=io.BytesIO()
                 _bt_sheet=pd.ExcelFile(io.BytesIO(_bt_raw_bytes)).sheet_names[0]
