@@ -1264,10 +1264,10 @@ def _breakdown_target_columns(frame):
             for name,candidates in aliases.items()}
 
 def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_basis="Sales Value Gross"):
-    """Allocate each HO target line by product attributes and prior 3-month average."""
+    """Split HO target to salesperson first, then to Principal ID by matching subline history."""
     raw=source_frame.copy()
     columns=_breakdown_target_columns(raw)
-    required=["subline","salesperson","ho_target"]
+    required=["year","month","subline","salesperson","ho_target"]
     missing=[name for name in required if not columns.get(name)]
     if missing:
         raise ValueError("Kolom wajib tidak ditemukan: "+", ".join(missing))
@@ -1278,149 +1278,165 @@ def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_
         "branch_target":"TARGET_CABANG",
     }.items() if columns.get(name)}
     raw=raw.rename(columns=rename)
-    raw=raw.dropna(subset=["SUBLINI_PRODUCT"])
+    if "PRINCIPLE ID" not in raw:
+        raw["PRINCIPLE ID"]=pd.NA
+    raw=raw.dropna(subset=["SUBLINI_PRODUCT"]).copy()
     raw["SUBLINI_PRODUCT"]=raw["SUBLINI_PRODUCT"].astype("string").str.strip()
     raw=raw[raw["SUBLINI_PRODUCT"].notna() & raw["SUBLINI_PRODUCT"].ne("")].copy()
     raw["TARGET_REKOMENDASI_HO"]=pd.to_numeric(raw["TARGET_REKOMENDASI_HO"],errors="coerce")
     if raw.empty:
         raise ValueError("Tidak ada baris target dengan SUBLINI_PRODUCT terisi.")
-    invalid=raw["TARGET_REKOMENDASI_HO"].isna()
-    if invalid.any():
-        raise ValueError(f"TARGET_REKOMENDASI_HO kosong/non-angka pada {int(invalid.sum())} baris.")
-
-    year=int(pd.to_numeric(raw["YEAR_ID"],errors="coerce").dropna().iloc[0]) if "YEAR_ID" in raw and pd.to_numeric(raw["YEAR_ID"],errors="coerce").notna().any() else None
-    month=int(pd.to_numeric(raw["MONTH_ID"],errors="coerce").dropna().iloc[0]) if "MONTH_ID" in raw and pd.to_numeric(raw["MONTH_ID"],errors="coerce").notna().any() else None
+    if raw["TARGET_REKOMENDASI_HO"].isna().any():
+        raise ValueError(f"TARGET_REKOMENDASI_HO kosong/non-angka pada {int(raw['TARGET_REKOMENDASI_HO'].isna().sum())} baris.")
+    year_values=pd.to_numeric(raw["YEAR_ID"],errors="coerce")
+    month_values=pd.to_numeric(raw["MONTH_ID"],errors="coerce")
+    year=int(year_values.dropna().iloc[0]) if year_values.notna().any() else None
+    month=int(month_values.dropna().iloc[0]) if month_values.notna().any() else None
     if year is None or month is None or not 1<=month<=12:
         raise ValueError("YEAR_ID dan MONTH_ID harus terisi dengan tahun serta bulan yang valid.")
-    if "YEAR_ID" in raw and pd.to_numeric(raw["YEAR_ID"],errors="coerce").dropna().nunique()>1:
-        raise ValueError("File harus berisi satu tahun target saja.")
-    if "MONTH_ID" in raw and pd.to_numeric(raw["MONTH_ID"],errors="coerce").dropna().nunique()>1:
-        raise ValueError("File harus berisi satu bulan target saja.")
+    if year_values.dropna().nunique()>1 or month_values.dropna().nunique()>1:
+        raise ValueError("File harus berisi satu tahun dan satu bulan target saja.")
 
-    sp_col=col(history_frame,"salesperson"); date_col=col(history_frame,"date")
-    sales_col=col(history_frame,"sales")
-    product_code_col=col(history_frame,"product_code"); product_col=col(history_frame,"product")
+    title_col=col(history_frame,"salesperson")
+    date_col=col(history_frame,"date")
     principal_col=col(history_frame,"principal")
-    if average_basis=="Jumlah relasi aktif":
-        customer_col=col(history_frame,"customer")
-        if not customer_col: raise ValueError("Kolom customer tidak tersedia untuk basis Jumlah relasi aktif.")
-    elif not sales_col:
-        raise ValueError("Kolom Sales Value Gross tidak tersedia dalam database historis.")
-    if not sp_col or not date_col:
-        raise ValueError("Kolom Sales Person Title dan tanggal wajib tersedia di database historis.")
+    if not title_col or not date_col or not principal_col:
+        raise ValueError("Database historis harus memuat tanggal, Sales Person Title, dan Principal ID.")
+    sales_col=col(history_frame,"sales")
+    customer_col=col(history_frame,"customer") if average_basis=="Jumlah relasi aktif" else None
+    if average_basis=="Jumlah relasi aktif" and not customer_col:
+        raise ValueError("Kolom Customer Name tidak tersedia untuk dasar Jumlah relasi aktif.")
+    if average_basis!="Jumlah relasi aktif" and not sales_col:
+        raise ValueError("Kolom Sales Value Gross tidak tersedia di database historis.")
+    product_code_col=col(history_frame,"product_code")
+    product_col=col(history_frame,"product")
+    principal_name_col=col(history_frame,"principal_name")
 
-    # Previous three completed months relative to the requested target period.
-    period=year*12+(month-1)
-    history_periods=[period-offset for offset in (1,2,3)]
-    hyear=pd.to_numeric(history_frame[col(history_frame,"year")],errors="coerce") if col(history_frame,"year") else pd.Series(pd.NA,index=history_frame.index)
-    hmonth=_month_number_series(history_frame[col(history_frame,"month")]) if col(history_frame,"month") else pd.Series(pd.NA,index=history_frame.index)
-    if hyear.isna().all() or hmonth.isna().all():
+    target_period=year*12+(month-1)
+    prior_periods=[target_period-offset for offset in (1,2,3)]
+    hist_year_col=col(history_frame,"year")
+    hist_month_col=col(history_frame,"month")
+    hist_year=pd.to_numeric(history_frame[hist_year_col],errors="coerce") if hist_year_col else pd.Series(pd.NA,index=history_frame.index)
+    hist_month=_month_number_series(history_frame[hist_month_col]) if hist_month_col else pd.Series(pd.NA,index=history_frame.index)
+    if hist_year.isna().all() or hist_month.isna().all():
         dates=pd.to_datetime(history_frame[date_col],errors="coerce")
-        hyear=dates.dt.year; hmonth=dates.dt.month
-    hp=hyear*12+(hmonth-1)
-    history=history_frame.loc[hp.isin(history_periods)].copy()
-    history["_target_period"]=hp.loc[history.index].astype("Int64")
-    history["_target_title"]=history[sp_col].astype("string").str.strip()
+        hist_year=dates.dt.year; hist_month=dates.dt.month
+    period_keys=hist_year*12+(hist_month-1)
+    history=history_frame.loc[period_keys.isin(prior_periods)].copy()
+    history["_bt_period"]=period_keys.loc[history.index].astype("Int64")
+    history["_bt_title"]=history[title_col].astype("string").str.strip()
+    history["_bt_title_key"]=history["_bt_title"].str.casefold()
+    history["_bt_principal"]=history[principal_col].astype("string").str.strip()
+    history["_bt_principal_key"]=history["_bt_principal"].str.casefold()
+    history["_bt_principal_name"]=history[principal_name_col].astype("string").str.strip() if principal_name_col else pd.NA
+    history=history[history["_bt_title_key"].notna() & history["_bt_title_key"].ne("") & history["_bt_principal_key"].notna() & history["_bt_principal_key"].ne("")].copy()
     if average_basis=="Jumlah relasi aktif":
-        history["_target_metric"]=pd.to_numeric(history[customer_col].notna().astype(int),errors="coerce").fillna(0)
-    else:
-        history["_target_metric"]=pd.to_numeric(history[sales_col],errors="coerce").fillna(0)
+        history=history[history[customer_col].notna()]
+        if sales_col:
+            history=history[pd.to_numeric(history[sales_col],errors="coerce").fillna(0)>0]
     if product_code_col:
-        history["_target_item"]=history[product_code_col].astype("string").str.strip().str.casefold().str.replace(r"\.0$","",regex=True)
+        history["_bt_item"]=history[product_code_col].astype("string").str.strip().str.casefold().str.replace(r"\.0$","",regex=True)
     else:
-        history["_target_item"]=pd.NA
+        history["_bt_item"]=pd.NA
     if product_col:
-        history["_target_subline"]=history[product_col].astype("string").str.strip().str.casefold()
+        history["_bt_subline"]=history[product_col].astype("string").str.strip().str.casefold()
     else:
-        history["_target_subline"]=pd.NA
-    if principal_col:
-        history["_target_principal"]=history[principal_col].astype("string").str.strip().str.casefold()
+        history["_bt_subline"]=pd.NA
+    if average_basis=="Jumlah relasi aktif":
+        history["_bt_value"]=1.0
     else:
-        history["_target_principal"]=pd.NA
-    # A SUBLINI_PRODUCT can contain several items, channels, or territories.
-    # The HO value is repeated for each assigned salesperson, so identify its
-    # source line by every available non-salesperson dimension before allocating.
-    line_columns=[c for c in ["YEAR_ID","MONTH_ID","KODE_CABANG","BISNIS","ITEM_SUBLINI","PRINCIPLE ID","SUBLINI_PRODUCT","CHANNEL_OUTLET_GROUP","TERITORY_GEO_GROUP"] if c in raw.columns]
-    if "SUBLINI_PRODUCT" not in line_columns:
-        line_columns.append("SUBLINI_PRODUCT")
-    line_groups=list(raw.groupby(line_columns,dropna=False,sort=False,observed=True))
-    warnings=[]
-    expected_by_subline={}
-    result_rows=[]
-    for _,group in line_groups:
-        subline=str(group["SUBLINI_PRODUCT"].iloc[0])
-        values=pd.to_numeric(group["TARGET_REKOMENDASI_HO"],errors="coerce").dropna().unique()
-        if not len(values):
+        history["_bt_value"]=pd.to_numeric(history[sales_col],errors="coerce").fillna(0.0)
+
+    # One HO target is repeated for each existing salesperson/principal row.
+    # Keep the other source dimensions so distinct item/channel lines remain separate.
+    target_line_columns=[c for c in ["YEAR_ID","MONTH_ID","KODE_CABANG","BISNIS","ITEM_SUBLINI","SUBLINI_PRODUCT","CHANNEL_OUTLET_GROUP","TERITORY_GEO_GROUP"] if c in raw.columns]
+    target_line_columns=list(dict.fromkeys(target_line_columns+["SUBLINI_PRODUCT"]))
+    warnings=[]; expected_by_subline={}; result_rows=[]
+
+    def allocate(total,names,weight_map):
+        if not names: return []
+        weights=[max(0.0,float(weight_map.get(name,0.0))) for name in names]
+        denominator=sum(weights)
+        if denominator<=0:
+            weights=[1.0]*len(names); denominator=float(len(names))
+        exact=[float(total)*weight/denominator for weight in weights]
+        if abs(float(total)-round(float(total)))<1e-8:
+            whole=[math.floor(value) for value in exact]
+            remainder=int(round(float(total)))-sum(whole)
+            order=sorted(range(len(names)),key=lambda idx:(exact[idx]-whole[idx],-idx),reverse=True)
+            for idx in order[:max(0,remainder)]: whole[idx]+=1
+            return [float(value) for value in whole]
+        return exact
+
+    for _,line in raw.groupby(target_line_columns,dropna=False,sort=False,observed=True):
+        subline=str(line["SUBLINI_PRODUCT"].iloc[0])
+        ho_values=pd.to_numeric(line["TARGET_REKOMENDASI_HO"],errors="coerce").dropna().unique()
+        if not len(ho_values):
             raise ValueError(f"Target HO kosong untuk {subline}.")
-        # In some source files, HO target values differ by item within one
-        # subline. Item and other source dimensions are separated above. If
-        # duplicates still conflict on the exact same line, take the largest
-        # stated HO value and show a visible warning instead of aborting all work.
-        target=float(max(values))
-        if target<0:
-            raise ValueError(f"Target HO untuk {subline} tidak boleh bernilai negatif.")
-        if len(values)>1:
-            warnings.append(f"{subline} / item {group['ITEM_SUBLINI'].iloc[0] if 'ITEM_SUBLINI' in group else '—'}: nilai HO berbeda pada baris duplikat ({', '.join(f'{float(v):,.0f}' for v in values[:5])}); alokasi memakai nilai tertinggi {target:,.0f}.")
-        expected_by_subline[subline]=expected_by_subline.get(subline,0.0)+target
+        ho_target=float(max(ho_values))
+        if ho_target<0:
+            raise ValueError(f"Target HO untuk {subline} tidak boleh negatif.")
+        if len(ho_values)>1:
+            item_label=line["ITEM_SUBLINI"].iloc[0] if "ITEM_SUBLINI" in line else "—"
+            warnings.append(f"{subline} · item {item_label}: TARGET_REKOMENDASI_HO berbeda antarbaris duplikat; dipakai nilai tertinggi {ho_target:,.0f}.")
+        expected_by_subline[subline]=expected_by_subline.get(subline,0.0)+ho_target
 
         candidates=history
-        item=str(group["ITEM_SUBLINI"].dropna().iloc[0]).strip().casefold().removesuffix(".0") if "ITEM_SUBLINI" in group and group["ITEM_SUBLINI"].notna().any() else ""
-        principal=str(group["PRINCIPLE ID"].dropna().iloc[0]).strip().casefold() if "PRINCIPLE ID" in group and group["PRINCIPLE ID"].notna().any() else ""
-        if item and candidates["_target_item"].notna().any():
-            candidates=candidates[candidates["_target_item"].eq(item)]
-        elif candidates["_target_subline"].notna().any():
-            candidates=candidates[candidates["_target_subline"].eq(subline.casefold())]
-        if principal and candidates["_target_principal"].notna().any():
-            candidates=candidates[candidates["_target_principal"].eq(principal)]
+        item_key=str(line["ITEM_SUBLINI"].dropna().iloc[0]).strip().casefold().removesuffix(".0") if "ITEM_SUBLINI" in line and line["ITEM_SUBLINI"].notna().any() else ""
+        if item_key and candidates["_bt_item"].notna().any():
+            candidates=candidates[candidates["_bt_item"].eq(item_key)]
+        elif candidates["_bt_subline"].notna().any():
+            candidates=candidates[candidates["_bt_subline"].eq(subline.casefold())]
+
         if average_basis=="Jumlah relasi aktif":
-            candidates=candidates[candidates[customer_col].notna()]
-            if sales_col:
-                candidates=candidates[pd.to_numeric(candidates[sales_col],errors="coerce").fillna(0)>0]
-            monthly=candidates.groupby(["_target_title","_target_period"])[customer_col].nunique()
+            title_monthly=candidates.groupby(["_bt_title_key","_bt_period"],observed=True)[customer_col].nunique()
+            principal_monthly=candidates.groupby(["_bt_title_key","_bt_principal_key","_bt_period"],observed=True)[customer_col].nunique()
         else:
-            monthly=candidates.groupby(["_target_title","_target_period"])["_target_metric"].sum()
-        if monthly.empty:
-            weights={}
-        else:
-            # Divide by 3, including months with no sales as zero.
-            totals=monthly.groupby(level=0).sum()/3.0
-            weights={str(title):float(value) for title,value in totals.items() if pd.notna(title) and str(title).strip()}
-        source_titles=group["SALESPERSON_POSITION"].astype("string").fillna("").str.strip().tolist()
-        had_blank_title=any(not title for title in source_titles)
-        titles=[title for title in source_titles if title]
-        if not titles or had_blank_title:
-            titles=list(dict.fromkeys(titles+[title for title,value in weights.items() if value>0]))
+            title_monthly=candidates.groupby(["_bt_title_key","_bt_period"],observed=True)["_bt_value"].sum()
+            principal_monthly=candidates.groupby(["_bt_title_key","_bt_principal_key","_bt_period"],observed=True)["_bt_value"].sum()
+        title_average=title_monthly.groupby(level=0).sum()/3.0 if not title_monthly.empty else pd.Series(dtype=float)
+        principal_average=principal_monthly.groupby(level=[0,1]).sum()/3.0 if not principal_monthly.empty else pd.Series(dtype=float)
+        title_weights={str(name):max(0.0,float(value)) for name,value in title_average.items() if pd.notna(name) and str(name).strip()}
+        principal_weights={(str(title),str(pid)):max(0.0,float(value)) for (title,pid),value in principal_average.items() if pd.notna(title) and pd.notna(pid)}
+        title_labels={str(row["_bt_title_key"]):str(row["_bt_title"]).strip() for _,row in candidates[["_bt_title_key","_bt_title"]].drop_duplicates().iterrows()}
+        principal_labels={str(row["_bt_principal_key"]):str(row["_bt_principal"]).strip() for _,row in candidates[["_bt_principal_key","_bt_principal"]].drop_duplicates().iterrows()}
+        principal_names={str(row["_bt_principal_key"]):str(row["_bt_principal_name"]).strip() for _,row in candidates[["_bt_principal_key","_bt_principal_name"]].dropna().drop_duplicates().iterrows()} if principal_name_col else {}
+
+        source_titles=line["SALESPERSON_POSITION"].astype("string").fillna("").str.strip().tolist()
+        has_blank_title=any(not title for title in source_titles)
+        titles=list(dict.fromkeys(title.casefold() for title in source_titles if title))
+        if not titles or has_blank_title:
+            titles=list(dict.fromkeys(titles+[title for title,value in title_weights.items() if value>0]))
         if not titles:
-            raise ValueError(f"Tidak ada SALESPERSON_POSITION atau data historis untuk {subline}; target tidak bisa dibagi.")
-        # Keep source-provided salesperson assignments, and add positions found
-        # in the historical average when the subline has no assigned line.
-        titles=list(dict.fromkeys(titles))
-        if not any(weights.get(title,0)>0 for title in titles):
-            weights={title:1.0 for title in titles}
-        else:
-            weights={title:max(0.0,float(weights.get(title,0))) for title in titles}
-        total_weight=sum(weights.values())
-        raw_alloc=[target*(weights[title]/total_weight) if total_weight else target/len(titles) for title in titles]
-        if abs(target-round(target))<1e-8:
-            floors=[math.floor(value) for value in raw_alloc]
-            remainder=int(round(target))-sum(floors)
-            order=sorted(range(len(titles)),key=lambda idx:(raw_alloc[idx]-floors[idx],-idx),reverse=True)
-            for idx in order[:max(0,remainder)]: floors[idx]+=1
-            allocated=[float(value) for value in floors]
-        else:
-            allocated=raw_alloc
-        template=group.iloc[0].to_dict()
-        for title,amount in zip(titles,allocated):
-            row=dict(template)
-            row["SALESPERSON_POSITION"]=title
-            row["TARGET_REKOMENDASI_HO"]=target
-            row["TARGET_CABANG"]=amount
-            row["AVERAGE_3_BULAN"]=float(weights.get(title,0.0))
-            row["PORSI_TARGET_%"]=amount/target*100 if target else 0.0
-            result_rows.append(row)
+            raise ValueError(f"Tidak ditemukan Sales Person Title pada file atau riwayat untuk {subline}.")
+        seller_allocations=allocate(ho_target,titles,title_weights)
+        source_principals=line["PRINCIPLE ID"].astype("string").fillna("").str.strip().tolist()
+        source_principals=list(dict.fromkeys(pid.casefold() for pid in source_principals if pid))
+        template=line.iloc[0].to_dict()
+        for title,title_target in zip(titles,seller_allocations):
+            per_principal={pid:value for (seller,pid),value in principal_weights.items() if seller==title}
+            principal_ids=[pid for pid,value in per_principal.items() if value>0]
+            if not principal_ids:
+                principal_ids=list(per_principal) or source_principals
+            if not principal_ids:
+                raise ValueError(f"Tidak ada Principal ID untuk {title_labels.get(title,title)} · {subline} pada riwayat maupun file mentah.")
+            principal_targets=allocate(title_target,principal_ids,per_principal)
+            for pid,principal_target in zip(principal_ids,principal_targets):
+                row=dict(template)
+                row["SALESPERSON_POSITION"]=title_labels.get(title,title)
+                row["PRINCIPLE ID"]=principal_labels.get(pid,pid)
+                row["TARGET_REKOMENDASI_HO"]=ho_target
+                row["TARGET_CABANG"]=principal_target
+                row["AVERAGE_3_BULAN"]=float(title_weights.get(title,0.0))
+                row["AVERAGE_3_BULAN_PRINCIPAL"]=float(per_principal.get(pid,0.0))
+                row["PORSI_TARGET_%"]=principal_target/ho_target*100 if ho_target else 0.0
+                row["PORSI_SALESPERSON_%"]=title_target/ho_target*100 if ho_target else 0.0
+                row["PORSI_PRINCIPAL_DALAM_SALESPERSON_%"]=principal_target/title_target*100 if title_target else 0.0
+                if pid in principal_names:
+                    row["PRINCIPAL_NAME"]=principal_names[pid]
+                result_rows.append(row)
+
     result=pd.DataFrame(result_rows)
-    # Validate that every subline's branch target equals the sum of its
-    # distinct item/source-line HO targets (HO values repeat by sales person).
     check=result.groupby("SUBLINI_PRODUCT")["TARGET_CABANG"].sum()
     for subline,total in check.items():
         if not math.isclose(float(total),expected_by_subline[str(subline)],rel_tol=0,abs_tol=1e-7):
@@ -1429,6 +1445,7 @@ def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_
     result.attrs["breakdown_warnings"]=warnings
     result.attrs["expected_by_subline"]=expected_by_subline
     return result,year,month,average_basis
+
 def filter_options(df,kind):
     c=col(df,kind)
     if not c: return []
@@ -2853,8 +2870,8 @@ if df is None:
 
 if main_section=="Breakdown Target":
     st.markdown("<div class='score-heading'>◇ BREAKDOWN TARGET</div>",unsafe_allow_html=True)
-    st.markdown("### Pembagian Target Bulanan per Sales Person")
-    st.caption("Target HO per SUBLINI_PRODUCT dibagi ke SALESPERSON_POSITION berdasarkan rata-rata 3 bulan lengkap sebelum bulan target. Total TARGET_CABANG setiap sublini direkonsiliasi agar sama persis dengan TARGET_REKOMENDASI_HO.")
+    st.markdown("### Breakdown Target · Sales Person → Principal ID")
+    st.caption("Tahap 1: target HO per item dan SUBLINI_PRODUCT dibagi ke Sales Person Title menurut rata-rata tiga bulan sebelumnya. Tahap 2: target tiap sales person dibagi lagi ke Principal ID yang muncul di riwayat untuk item/sublini tersebut. Nilai akhir mengisi TARGET_CABANG per kombinasi Sales Person Title × Principal ID × SUBLINI_PRODUCT.")
     _bt_controls=st.columns([1,1,2,2],gap="medium")
     with _bt_controls[0]:
         _bt_year=st.number_input("Tahun target",min_value=2000,max_value=2100,value=int(pd.Timestamp.now().year),step=1,key="breakdown_target_year")
@@ -2864,7 +2881,7 @@ if main_section=="Breakdown Target":
         _bt_basis=st.selectbox("Dasar rata-rata 3 bulan",["Sales Value Gross","Jumlah relasi aktif"],key="breakdown_target_basis",help="Pembagian menggunakan rata-rata per Sales Person dan produk selama tiga bulan kalender lengkap sebelum bulan target.")
     with _bt_controls[3]:
         st.markdown(f"<div class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(ACTIVE_BRANCH_NAME)} · {html.escape(ACTIVE_BRANCH_CODE)}</div>",unsafe_allow_html=True)
-    _bt_upload=st.file_uploader("Unggah file mentah target (.xlsx)",type=["xlsx"],key="breakdown_target_upload",help="File perlu memuat YEAR_ID, MONTH_ID, SUBLINI_PRODUCT, SALESPERSON_POSITION, dan TARGET_REKOMENDASI_HO.")
+    _bt_upload=st.file_uploader("Unggah file mentah target (.xlsx)",type=["xlsx"],key="breakdown_target_upload",help="Kolom utama: YEAR_ID, MONTH_ID, ITEM_SUBLINI, SUBLINI_PRODUCT, SALESPERSON_POSITION, dan TARGET_REKOMENDASI_HO. Principal ID akan dicocokkan dari riwayat database.")
     _bt_source_bytes=None; _bt_source_name=""
     if _bt_upload is not None:
         _bt_source_bytes=_bt_upload.getvalue(); _bt_source_name=_bt_upload.name
@@ -2929,14 +2946,17 @@ if main_section=="Breakdown Target":
             _bt_kpis[0].metric("Total Target HO",f"{_bt_total_ho:,.0f}")
             _bt_kpis[1].metric("Total Target Cabang",f"{_bt_total_branch:,.0f}")
             _bt_kpis[2].metric("Sublini Produk",f"{_bt_result['SUBLINI_PRODUCT'].nunique():,}")
-            _bt_kpis[3].metric("Sales Person",f"{_bt_result['SALESPERSON_POSITION'].nunique():,}")
+            _bt_kpis[3].metric("Sales Person · Principal ID",f"{_bt_result['SALESPERSON_POSITION'].nunique():,} · {_bt_result['PRINCIPLE ID'].nunique():,}")
             st.markdown("#### Rekonsiliasi Target per Sublini")
             st.dataframe(_bt_summary,width="stretch",hide_index=True,column_config={"Target HO":st.column_config.NumberColumn(format="%,.0f"),"Target Cabang":st.column_config.NumberColumn(format="%,.0f"),"Selisih":st.column_config.NumberColumn(format="%,.0f")})
-            st.markdown("#### Hasil Breakdown per Sales Person")
-            _bt_display_cols=[c for c in ["YEAR_ID","MONTH_ID","KODE_CABANG","BISNIS","ITEM_SUBLINI","PRINCIPLE ID","SUBLINI_PRODUCT","CHANNEL_OUTLET_GROUP","SALESPERSON_POSITION","TERITORY_GEO_GROUP","TARGET_REKOMENDASI_HO","AVERAGE_3_BULAN","PORSI_TARGET_%","TARGET_CABANG"] if c in _bt_result.columns]
+            st.markdown("#### Hasil Breakdown per Sales Person × Principal ID")
+            _bt_display_cols=[c for c in ["YEAR_ID","MONTH_ID","KODE_CABANG","BISNIS","ITEM_SUBLINI","SUBLINI_PRODUCT","CHANNEL_OUTLET_GROUP","SALESPERSON_POSITION","PRINCIPLE ID","PRINCIPAL_NAME","TERITORY_GEO_GROUP","TARGET_REKOMENDASI_HO","AVERAGE_3_BULAN","PORSI_SALESPERSON_%","AVERAGE_3_BULAN_PRINCIPAL","PORSI_PRINCIPAL_DALAM_SALESPERSON_%","PORSI_TARGET_%","TARGET_CABANG"] if c in _bt_result.columns]
             st.dataframe(_bt_result[_bt_display_cols],width="stretch",hide_index=True,column_config={
                 "TARGET_REKOMENDASI_HO":st.column_config.NumberColumn(format="%,.0f"),
                 "AVERAGE_3_BULAN":st.column_config.NumberColumn(format="%,.2f"),
+                "PORSI_SALESPERSON_%":st.column_config.NumberColumn(format="%.2f%%"),
+                "AVERAGE_3_BULAN_PRINCIPAL":st.column_config.NumberColumn(format="%,.2f"),
+                "PORSI_PRINCIPAL_DALAM_SALESPERSON_%":st.column_config.NumberColumn(format="%.2f%%"),
                 "PORSI_TARGET_%":st.column_config.NumberColumn(format="%.2f%%"),
                 "TARGET_CABANG":st.column_config.NumberColumn(format="%,.0f")})
             _bt_buffer=io.BytesIO()
