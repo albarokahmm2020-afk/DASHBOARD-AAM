@@ -1250,6 +1250,7 @@ def _breakdown_target_columns(frame):
         "item":["item sublini","item_sublini","item"],
         "principal":["principle id","principal id","principal_id"],
         "channel":["channel outlet group","channel_outlet_group","channel group","channel_group"],
+        "business_group":["bisnis","bisnis group","business group","business_group"],
         "salesperson":["salesperson position","salesperson_position","sales person title"],
         "ho_target":["target rekomendasi ho","target_rekomendasi_ho","target ho"],
         "branch_target":["target cabang","target_cabang"],
@@ -1444,11 +1445,12 @@ def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_
     result.attrs["expected_by_subline"]=expected_by_subline
     return result,year,month,average_basis
 
-def _prepare_principal_channel_breakdown(history_frame, year, month, principal_targets, average_basis="Sales Value Gross"):
+def _prepare_principal_channel_breakdown(history_frame, year, month, principal_targets, average_basis="Sales Value Gross", selected_business_group=None):
     """Allocate manually entered Principal targets to sellers and outlet channels by 3-month history."""
     title_col=col(history_frame,"salesperson"); principal_col=col(history_frame,"principal")
     channel_col=col(history_frame,"channel_group"); date_col=col(history_frame,"date")
     sales_col=col(history_frame,"sales"); customer_col=col(history_frame,"customer")
+    business_col=col(history_frame,"business_group")
     if not all([title_col,principal_col,channel_col,date_col]):
         raise ValueError("Riwayat wajib memuat tanggal, Sales Person Title, Principal ID, dan Channel Outlet Group.")
     if average_basis=="Sales Value Gross" and not sales_col:
@@ -1463,6 +1465,8 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     if hy.isna().all() or hm.isna().all():
         dates=pd.to_datetime(history_frame[date_col],errors="coerce"); hy=dates.dt.year; hm=dates.dt.month
     periods=hy*12+(hm-1); hist=history_frame.loc[periods.isin(prior)].copy()
+    if selected_business_group and business_col:
+        hist=hist[hist[business_col].astype("string").str.strip().eq(str(selected_business_group).strip())]
     hist["_pid"]=hist[principal_col].astype("string").str.strip()
     hist["_seller"]=hist[title_col].astype("string").str.strip()
     hist["_channel"]=hist[channel_col].astype("string").str.strip()
@@ -1481,29 +1485,32 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
         if denom<=0: raise ValueError(f"Bobot riwayat kosong untuk Principal ID {pid}.")
         for (seller,channel),weight in weights.items():
             base=total*float(weight)/denom
-            rows.append({"PRINCIPLE ID":pid,"PRINCIPAL_NAME":str(target.get("PRINCIPAL_NAME",pid)),"SALESPERSON_POSITION":seller,"CHANNEL_OUTLET_GROUP":channel,"TARGET_PRINCIPAL":total,"AVERAGE_3_BULAN":float(weight)/3,"PORSI_%":float(weight)/denom*100,"TARGET_BREAKDOWN":base,"ADJUST_TARGET":0.0,"TARGET_CABANG":base})
+            rows.append({"BUSINESS_GROUP":str(selected_business_group or (hist[business_col].dropna().iloc[0] if business_col and hist[business_col].notna().any() else "")),"PRINCIPLE ID":pid,"PRINCIPAL_NAME":str(target.get("PRINCIPAL_NAME",pid)),"SALESPERSON_POSITION":seller,"CHANNEL_OUTLET_GROUP":channel,"TARGET_PRINCIPAL":total,"AVERAGE_3_BULAN":float(weight)/3,"PORSI_%":float(weight)/denom*100,"TARGET_BREAKDOWN":base,"ADJUST_TARGET":0.0,"TARGET_CABANG":base})
     return pd.DataFrame(rows)
 
 def _apply_principal_breakdown_to_raw(raw_frame, allocations):
     """Write adjusted seller × Principal × channel allocations into raw TARGET_CABANG rows."""
     source=raw_frame.copy(); cols=_breakdown_target_columns(source)
     required={"salesperson":cols.get("salesperson"),"principal":cols.get("principal"),"channel":cols.get("channel"),"branch_target":cols.get("branch_target")}
+    if "BUSINESS_GROUP" in allocations.columns: required["business_group"]=cols.get("business_group")
     missing=[name for name,value in required.items() if not value]
     if missing: raise ValueError("Kolom file mentah wajib tidak ditemukan: "+", ".join(missing))
-    key_cols=[required[k] for k in ("salesperson","principal","channel")]
-    key_names=["SALESPERSON_POSITION","PRINCIPLE ID","CHANNEL_OUTLET_GROUP"]
+    key_order=["business_group","salesperson","principal","channel"] if "business_group" in required else ["salesperson","principal","channel"]
+    key_cols=[required[k] for k in key_order]
+    key_names=[{"business_group":"BUSINESS_GROUP","salesperson":"SALESPERSON_POSITION","principal":"PRINCIPLE ID","channel":"CHANNEL_OUTLET_GROUP"}[k] for k in key_order]
     def norm(series): return series.astype("string").fillna("").str.strip().str.casefold()
     target=allocations.groupby(key_names,as_index=False,dropna=False)["TARGET_CABANG"].sum()
-    lookup={tuple(str(v).strip().casefold() for v in row[:3]):float(row[3]) for row in target.itertuples(index=False,name=None)}
+    lookup={tuple(str(v).strip().casefold() for v in row[:len(key_names)]):float(row[len(key_names)]) for row in target.itertuples(index=False,name=None)}
     raw_keys=list(zip(*(norm(source[c]).tolist() for c in key_cols)))
     source["_allocation_total"]=[lookup.get(tuple(k),0.0) for k in raw_keys]
     source["_raw_weight"]=pd.to_numeric(source[cols.get("ho_target")],errors="coerce").fillna(0).clip(lower=0) if cols.get("ho_target") else 1.0
-    keys=pd.DataFrame(raw_keys,index=source.index,columns=["_k0","_k1","_k2"])
+    temp_keys=[f"_k{i}" for i in range(len(key_cols))]
+    keys=pd.DataFrame(raw_keys,index=source.index,columns=temp_keys)
     source=source.join(keys)
-    denom=source.groupby(["_k0","_k1","_k2"],dropna=False)["_raw_weight"].transform("sum")
-    count=source.groupby(["_k0","_k1","_k2"],dropna=False)["_raw_weight"].transform("size")
+    denom=source.groupby(temp_keys,dropna=False)["_raw_weight"].transform("sum")
+    count=source.groupby(temp_keys,dropna=False)["_raw_weight"].transform("size")
     source[required["branch_target"]]=source["_allocation_total"]*source["_raw_weight"].div(denom.where(denom>0,count))
-    return source.drop(columns=["_allocation_total","_raw_weight","_k0","_k1","_k2"])
+    return source.drop(columns=["_allocation_total","_raw_weight"]+temp_keys)
 
 
 def filter_options(df,kind):
@@ -2934,19 +2941,23 @@ if main_section=="Breakdown Target":
     st.caption("Tahap 1: input target bulanan per Principal ID. Sistem membagi target ke Sales Person Title dan Channel Outlet Group dari rata-rata 3 bulan. Sesuaikan kolom ADJUST_TARGET. Tahap 2: unggah file mentah untuk mengisi TARGET_CABANG dan ekspor.")
     _bt_tabs=st.tabs(["1 · Breakdown Principal", "2 · File Mentah Target"])
     with _bt_tabs[0]:
-        _bt_controls=st.columns(4,gap="medium")
+        _bt_controls=st.columns(5,gap="medium")
         _bt_year=_bt_controls[0].number_input("Tahun target",2000,2100,int(pd.Timestamp.now().year),key="breakdown_target_year")
         _bt_month=_bt_controls[1].selectbox("Bulan target",list(range(1,13)),index=int(pd.Timestamp.now().month)-1,format_func=lambda x:MONTHS[int(x)],key="breakdown_target_month")
         _bt_basis=_bt_controls[2].selectbox("Dasar rata-rata 3 bulan",["Sales Value Gross","Jumlah relasi aktif"],key="breakdown_target_basis")
-        _bt_controls[3].markdown(f"<div class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(ACTIVE_BRANCH_NAME)} · {html.escape(ACTIVE_BRANCH_CODE)}</div>",unsafe_allow_html=True)
-        _bt_pid_col=col(df,"principal"); _bt_name_col=col(df,"principal_name")
+        _bt_bg_col=col(df,"business_group")
+        _bt_bg_options=sorted(df[_bt_bg_col].dropna().astype(str).str.strip().unique()) if _bt_bg_col else []
+        _bt_selected_bg=_bt_controls[3].selectbox("Business Group",_bt_bg_options,key="breakdown_target_business_group") if _bt_bg_options else ""
+        _bt_controls[4].markdown(f"<div class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(ACTIVE_BRANCH_NAME)} · {html.escape(ACTIVE_BRANCH_CODE)}</div>",unsafe_allow_html=True)
+        _bt_scope=df[df[_bt_bg_col].astype(str).str.strip().eq(_bt_selected_bg)].copy() if _bt_bg_col and _bt_selected_bg else df
+        _bt_pid_col=col(_bt_scope,"principal"); _bt_name_col=col(_bt_scope,"principal_name")
         if not _bt_pid_col:
             st.error("Database tidak memiliki Principal ID.")
         else:
-            _bt_principals=pd.DataFrame({"PRINCIPLE ID":sorted(df[_bt_pid_col].dropna().astype(str).str.strip().unique())})
-            _bt_principals["PRINCIPAL_NAME"]=_bt_principals["PRINCIPLE ID"] if not _bt_name_col else _bt_principals["PRINCIPLE ID"].map(df.dropna(subset=[_bt_name_col]).drop_duplicates(_bt_pid_col).set_index(_bt_pid_col)[_bt_name_col].astype(str).to_dict()).fillna(_bt_principals["PRINCIPLE ID"])
+            _bt_principals=pd.DataFrame({"PRINCIPLE ID":sorted(_bt_scope[_bt_pid_col].dropna().astype(str).str.strip().unique())})
+            _bt_principals["PRINCIPAL_NAME"]=_bt_principals["PRINCIPLE ID"] if not _bt_name_col else _bt_principals["PRINCIPLE ID"].map(_bt_scope.dropna(subset=[_bt_name_col]).drop_duplicates(_bt_pid_col).set_index(_bt_pid_col)[_bt_name_col].astype(str).to_dict()).fillna(_bt_principals["PRINCIPLE ID"])
             _bt_principals["TARGET_PRINCIPAL"]=0.0
-            _bt_period_key=f"{int(_bt_year)}-{int(_bt_month):02d}"
+            _bt_period_key=f"{int(_bt_year)}-{int(_bt_month):02d}-{_bt_selected_bg}"
             if st.session_state.get("_bt_manual_period")!=_bt_period_key:
                 st.session_state["_bt_manual_period"]=_bt_period_key
                 st.session_state["_bt_manual_targets"]=_bt_principals.copy()
@@ -2955,7 +2966,7 @@ if main_section=="Breakdown Target":
             st.session_state["_bt_manual_targets"]=_bt_targets
             if st.button("Buat breakdown per Sales Person dan Channel",key="bt_generate_allocations",type="primary"):
                 try:
-                    st.session_state["_bt_allocations"]=_prepare_principal_channel_breakdown(df,int(_bt_year),int(_bt_month),_bt_targets,_bt_basis)
+                    st.session_state["_bt_allocations"]=_prepare_principal_channel_breakdown(_bt_scope,int(_bt_year),int(_bt_month),_bt_targets,_bt_basis,_bt_selected_bg)
                     st.success("Breakdown siap disesuaikan.")
                 except Exception as _bt_err: st.error(f"Breakdown gagal: {_bt_err}")
             if st.session_state.get("_bt_allocations") is not None:
