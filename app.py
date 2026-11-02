@@ -2893,7 +2893,7 @@ def read_normalized_monthly_branch(branch_code, paths, signature):
             except Exception:
                 piece=None
         if piece is None:
-            piece=normalize(pd.read_excel(path,engine="openpyxl"),copy=False)
+            piece=normalize(pd.read_excel(path,engine="calamine"),copy=False)
             for name in piece.columns:
                 if not pd.api.types.is_numeric_dtype(piece[name].dtype):
                     piece[name]=piece[name].astype("category")
