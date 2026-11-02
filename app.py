@@ -2663,8 +2663,7 @@ with st.sidebar:
             _gcp_account=st.secrets.get("gcp_service_account",{})
             _drive_file_id=str(_drive_settings.get("database_file_id","")).strip()
             _drive_database_folder_id=str(_drive_settings.get("database_folder_id",DEFAULT_DRIVE_DATABASE_FOLDER_ID)).strip()
-            _drive_database_mode=str(_drive_settings.get("database_mode","auto")).strip().casefold()
-            _drive_prefer_monthly=_drive_database_mode not in {"single","workbook"}
+            _drive_prefer_monthly=True
             _drive_is_folder=_drive_prefer_monthly or not bool(_drive_file_id)
             _drive_source_id=(_drive_database_folder_id if _drive_prefer_monthly else (_drive_file_id or _drive_database_folder_id))
             _drive_configured=bool(_drive_source_id and _gcp_account)
@@ -2679,7 +2678,7 @@ with st.sidebar:
         _drive_database_path=None
         if _data_source_mode.startswith("Google Drive"):
             st.caption(f"Sumber data cabang {ACTIVE_BRANCH_NAME} ({ACTIVE_BRANCH_CODE}) dibaca dari Google Drive.")
-            st.caption("Mode otomatis memakai file per cabang dan bulan jika tersedia; workbook gabungan dipakai sebagai fallback.")
+            st.caption("Sumber transaksi: hanya file XLSX bulanan di database_monthly_split per cabang. Workbook gabungan tidak dipakai.")
             st.caption("File yang tidak berubah memakai cache lokal. Tekan Periksa pembaruan dari Drive setelah memperbarui file.")
             _drive_database_path=APP_DIR/".remote_database"/"database_push.xlsx"
             if st.button("↻ Periksa pembaruan dari Drive",key="refresh_drive_database",width="stretch"):
@@ -2826,22 +2825,14 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
         if not upper_name.startswith(f"DATABASE_PUSH_{branch_code}_"):
             continue
         suffix=Path(name).suffix.lower()
-        if suffix in (".xlsx",".csv"):
+        if suffix==".xlsx":
             period=Path(name).stem.upper().replace(f"DATABASE_PUSH_{branch_code}_", "")
-            candidates.setdefault(period,{})[suffix]=item
-
-    # Prefer the verified Excel copy if both formats exist. Listing data must be
-    # read-only: conversion or trashing source files belongs in an explicit admin action.
-    monthly_by_period={}
-    for period,by_type in candidates.items():
-        chosen=by_type.get(".xlsx") or by_type.get(".csv")
-        if chosen:
-            monthly_by_period[period]=chosen
-    if not any(Path(str(item.get("name",""))).suffix.lower()==".xlsx" for item in monthly_by_period.values()):
+            candidates[period]=item
+    if not candidates:
         raise FileNotFoundError(
-            f"Belum ada workbook XLSX bulanan untuk cabang {branch_code}; gunakan database gabungan sebagai fallback."
+            f"Belum ada workbook XLSX bulanan untuk cabang {branch_code} di database_monthly_split."
         )
-    return sorted(monthly_by_period.values(),key=lambda item:item.get("name",""))
+    return sorted(candidates.values(),key=lambda item:item.get("name",""))
 
 def _download_drive_monthly_files(files, destination, service_account_info):
     """Download changed month files one at a time and keep a local reusable copy."""
@@ -2881,64 +2872,48 @@ def _download_drive_monthly_files(files, destination, service_account_info):
         signatures.append(f"{name}:{version}")
     return paths,"|".join(signatures)
 
-@st.cache_resource(max_entries=1,show_spinner="Menyiapkan data transaksi cabang…")
+@st.cache_resource(max_entries=1,show_spinner="Membaca XLSX bulanan cabang…")
 def read_normalized_monthly_branch(branch_code, paths, signature):
-    """Load monthly files with shared categorical columns to stay within Cloud memory."""
-    cache_dir=APP_DIR/".remote_database"/"normalized"
+    """Load XLSX months once and reuse each month's normalized parquet cache."""
+    cache_dir=APP_DIR/".remote_database"/"normalized"/str(branch_code)
     cache_dir.mkdir(parents=True,exist_ok=True)
-    fingerprint=hashlib.sha256(signature.encode("utf-8")).hexdigest()[:20]
-    parquet_path=cache_dir/f"{branch_code}_{fingerprint}.parquet"
-    if parquet_path.exists():
-        try: return pd.read_parquet(parquet_path)
-        except Exception: parquet_path.unlink(missing_ok=True)
-
-    # Build shared categories from the Excel files using only text columns.
-    text_columns=[]; categories={}
-    excel_paths=[Path(path) for path in paths if Path(path).suffix.lower()==".xlsx"]
-    has_csv=any(Path(path).suffix.lower()==".csv" for path in paths)
-    if excel_paths:
-        sample=pd.read_excel(excel_paths[0],engine="openpyxl",nrows=1000)
-        dimension_names={key(alias) for kind,aliases in ALIASES.items() if kind!="sales" for alias in aliases}
-        text_columns=[name for name in sample.columns if not pd.api.types.is_numeric_dtype(sample[name].dtype) or key(name) in dimension_names]
-        del sample
-        if not has_csv:
-            categories={name:set() for name in text_columns}
-            for path in excel_paths:
-                dimension_data=pd.read_excel(path,engine="openpyxl",usecols=lambda name:name in categories)
-                for name in text_columns:
-                    if name in dimension_data:
-                        categories[name].update(dimension_data[name].dropna().astype("string").str.strip().unique().tolist())
-                del dimension_data
-    shared_dtypes={name:pd.CategoricalDtype(categories=sorted(values)) for name,values in categories.items()}
-
-    pieces=[]
-    for path in paths:
-        if Path(path).suffix.lower()==".xlsx":
-            piece=pd.read_excel(path,engine="openpyxl")
-            if not has_csv:
-                for name,dtype in shared_dtypes.items():
-                    if name in piece: piece[name]=piece[name].astype("string").str.strip().astype(dtype)
-        elif Path(path).suffix.lower()==".csv":
+    pieces=[]; text_columns=set()
+    for raw_path in paths:
+        path=Path(raw_path)
+        if path.suffix.lower()!=".xlsx":
+            continue
+        normalized_path=cache_dir/f"{path.stem}.parquet"
+        marker_path=cache_dir/f"{path.stem}.json"
+        file_version=f"{path.stat().st_mtime_ns}:{path.stat().st_size}"
+        piece=None
+        if normalized_path.exists() and marker_path.exists():
             try:
-                piece=pd.read_csv(path,encoding="utf-8-sig",low_memory=False)
-            except UnicodeDecodeError:
-                piece=pd.read_csv(path,encoding="cp1252",low_memory=False)
-        else:
-            raise ValueError(f"Format database bulanan tidak didukung: {Path(path).name}")
-        if not piece.empty: pieces.append(piece)
+                if json.loads(marker_path.read_text(encoding="utf-8"))=={"version":file_version}:
+                    piece=pd.read_parquet(normalized_path)
+            except Exception:
+                piece=None
+        if piece is None:
+            piece=normalize(pd.read_excel(path,engine="openpyxl"),copy=False)
+            for name in piece.columns:
+                if not pd.api.types.is_numeric_dtype(piece[name].dtype):
+                    piece[name]=piece[name].astype("category")
+                    text_columns.add(name)
+            temporary=normalized_path.with_suffix(".parquet.tmp")
+            try:
+                piece.to_parquet(temporary,index=False)
+                temporary.replace(normalized_path)
+                marker_path.write_text(json.dumps({"version":file_version}),encoding="utf-8")
+            except Exception:
+                temporary.unlink(missing_ok=True)
+        text_columns.update(name for name in piece.columns if isinstance(piece[name].dtype,pd.CategoricalDtype))
+        if not piece.empty:
+            pieces.append(piece)
     if not pieces:
         return pd.DataFrame()
     normalized=normalize(pd.concat(pieces,ignore_index=True,sort=False),copy=False)
-    # Keep normalized text as categorical; expanding it to a Python string per row
-    # was the main cause of Streamlit Cloud exceeding its memory limit.
     for name in text_columns:
         if name in normalized and not isinstance(normalized[name].dtype,pd.CategoricalDtype):
             normalized[name]=normalized[name].astype("category")
-    temporary=parquet_path.with_suffix(".parquet.tmp")
-    try:
-        normalized.to_parquet(temporary,index=False); temporary.replace(parquet_path)
-    except Exception:
-        temporary.unlink(missing_ok=True)
     return normalized
 
 def _google_drive_database_path(source_id, destination, service_account_info, is_folder=False):
@@ -3201,16 +3176,8 @@ if _data_source_mode=="Google Drive · spreadsheet bulanan":
                 raise FileNotFoundError(f"Folder bulanan {ACTIVE_BRANCH_CODE} belum berisi transaksi.")
         _default_database=None
     except FileNotFoundError as _monthly_error:
-        _fallback_id=_drive_file_id or _drive_database_folder_id
-        try:
-            _data_source_mode="Google Drive · workbook tunggal"
-            _default_database=_google_drive_database_path(
-                _fallback_id,_drive_database_path,_gcp_account,not bool(_drive_file_id),
-            )
-            st.warning(f"Data bulanan {ACTIVE_BRANCH_CODE} belum lengkap, jadi dashboard memakai workbook gabungan untuk sementara.")
-        except Exception as _fallback_error:
-            st.error(f"Data bulanan tidak tersedia ({_monthly_error}) dan workbook gabungan gagal dibaca: {_fallback_error}")
-            _default_database=None
+        st.error(f"Data XLSX bulanan {ACTIVE_BRANCH_CODE} tidak tersedia: {_monthly_error}")
+        _default_database=None
     except Exception as _drive_error:
         st.error(f"Tidak dapat membaca spreadsheet bulanan dari Google Drive: {_drive_error}")
         df=None
