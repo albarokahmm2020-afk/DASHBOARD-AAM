@@ -1241,6 +1241,177 @@ def fmt_summary(x, metric):
     return f"Rp {thousands} rb"
 def target_template():
     return pd.DataFrame(columns=["Year","Month","Sales Person Title","Target","Program","Principal","Principal ID","Channel Group","Business Group","Product Code","Product Description"])
+def _breakdown_target_columns(frame):
+    """Resolve the columns used by the monthly HO target source workbook."""
+    lookup={key(column):column for column in frame.columns}
+    aliases={
+        "year":["year id","year_id","year"],
+        "month":["month id","month_id","month"],
+        "subline":["sublini product","sublini_product","subline product"],
+        "item":["item sublini","item_sublini","item"],
+        "principal":["principle id","principal id","principal_id"],
+        "salesperson":["salesperson position","salesperson_position","sales person title"],
+        "ho_target":["target rekomendasi ho","target_rekomendasi_ho","target ho"],
+        "branch_target":["target cabang","target_cabang"],
+    }
+    return {name:next((lookup[key(candidate)] for candidate in candidates if key(candidate) in lookup),None)
+            for name,candidates in aliases.items()}
+
+def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_basis="Sales Value Gross"):
+    """Allocate each subline's HO target among salespeople by the prior 3-month average."""
+    raw=source_frame.copy()
+    columns=_breakdown_target_columns(raw)
+    required=["subline","salesperson","ho_target"]
+    missing=[name for name in required if not columns.get(name)]
+    if missing:
+        raise ValueError("Kolom wajib tidak ditemukan: "+", ".join(missing))
+    rename={columns[name]:label for name,label in {
+        "year":"YEAR_ID","month":"MONTH_ID","subline":"SUBLINI_PRODUCT",
+        "item":"ITEM_SUBLINI","principal":"PRINCIPLE ID",
+        "salesperson":"SALESPERSON_POSITION","ho_target":"TARGET_REKOMENDASI_HO",
+        "branch_target":"TARGET_CABANG",
+    }.items() if columns.get(name)}
+    raw=raw.rename(columns=rename)
+    raw=raw.dropna(subset=["SUBLINI_PRODUCT"])
+    raw["SUBLINI_PRODUCT"]=raw["SUBLINI_PRODUCT"].astype("string").str.strip()
+    raw=raw[raw["SUBLINI_PRODUCT"].notna() & raw["SUBLINI_PRODUCT"].ne("")].copy()
+    raw["TARGET_REKOMENDASI_HO"]=pd.to_numeric(raw["TARGET_REKOMENDASI_HO"],errors="coerce")
+    if raw.empty:
+        raise ValueError("Tidak ada baris target dengan SUBLINI_PRODUCT terisi.")
+    invalid=raw["TARGET_REKOMENDASI_HO"].isna()
+    if invalid.any():
+        raise ValueError(f"TARGET_REKOMENDASI_HO kosong/non-angka pada {int(invalid.sum())} baris.")
+
+    # The HO target is repeated on each salesperson row in the source. It is a
+    # single subline total, so validate consistency and use one value per subline.
+    ho_by_subline={}
+    for subline,group in raw.groupby("SUBLINI_PRODUCT",dropna=False,sort=False):
+        values=pd.to_numeric(group["TARGET_REKOMENDASI_HO"],errors="coerce").dropna().unique()
+        if len(values)>1:
+            raise ValueError(f"Target HO untuk {subline} berbeda antarbaris: {', '.join(map(str,values[:5]))}.")
+        ho_by_subline[str(subline)]=float(values[0]) if len(values) else 0.0
+        if ho_by_subline[str(subline)]<0:
+            raise ValueError(f"Target HO untuk {subline} tidak boleh bernilai negatif.")
+
+    year=int(pd.to_numeric(raw["YEAR_ID"],errors="coerce").dropna().iloc[0]) if "YEAR_ID" in raw and pd.to_numeric(raw["YEAR_ID"],errors="coerce").notna().any() else None
+    month=int(pd.to_numeric(raw["MONTH_ID"],errors="coerce").dropna().iloc[0]) if "MONTH_ID" in raw and pd.to_numeric(raw["MONTH_ID"],errors="coerce").notna().any() else None
+    if year is None or month is None or not 1<=month<=12:
+        raise ValueError("YEAR_ID dan MONTH_ID harus terisi dengan tahun serta bulan yang valid.")
+    if "YEAR_ID" in raw and pd.to_numeric(raw["YEAR_ID"],errors="coerce").dropna().nunique()>1:
+        raise ValueError("File harus berisi satu tahun target saja.")
+    if "MONTH_ID" in raw and pd.to_numeric(raw["MONTH_ID"],errors="coerce").dropna().nunique()>1:
+        raise ValueError("File harus berisi satu bulan target saja.")
+
+    sp_col=col(history_frame,"salesperson"); date_col=col(history_frame,"date")
+    sales_col=col(history_frame,"sales")
+    product_code_col=col(history_frame,"product_code"); product_col=col(history_frame,"product")
+    principal_col=col(history_frame,"principal")
+    if average_basis=="Jumlah relasi aktif":
+        customer_col=col(history_frame,"customer")
+        if not customer_col: raise ValueError("Kolom customer tidak tersedia untuk basis Jumlah relasi aktif.")
+    elif not sales_col:
+        raise ValueError("Kolom Sales Value Gross tidak tersedia dalam database historis.")
+    if not sp_col or not date_col:
+        raise ValueError("Kolom Sales Person Title dan tanggal wajib tersedia di database historis.")
+
+    # Previous three completed months relative to the requested target period.
+    period=year*12+(month-1)
+    history_periods=[period-offset for offset in (1,2,3)]
+    hyear=pd.to_numeric(history_frame[col(history_frame,"year")],errors="coerce") if col(history_frame,"year") else pd.Series(pd.NA,index=history_frame.index)
+    hmonth=_month_number_series(history_frame[col(history_frame,"month")]) if col(history_frame,"month") else pd.Series(pd.NA,index=history_frame.index)
+    if hyear.isna().all() or hmonth.isna().all():
+        dates=pd.to_datetime(history_frame[date_col],errors="coerce")
+        hyear=dates.dt.year; hmonth=dates.dt.month
+    hp=hyear*12+(hmonth-1)
+    history=history_frame.loc[hp.isin(history_periods)].copy()
+    history["_target_period"]=hp.loc[history.index].astype("Int64")
+    history["_target_title"]=history[sp_col].astype("string").str.strip()
+    if average_basis=="Jumlah relasi aktif":
+        history["_target_metric"]=pd.to_numeric(history[customer_col].notna().astype(int),errors="coerce").fillna(0)
+    else:
+        history["_target_metric"]=pd.to_numeric(history[sales_col],errors="coerce").fillna(0)
+    if product_code_col:
+        history["_target_item"]=history[product_code_col].astype("string").str.strip().str.casefold().str.replace(r"\.0$","",regex=True)
+    else:
+        history["_target_item"]=pd.NA
+    if product_col:
+        history["_target_subline"]=history[product_col].astype("string").str.strip().str.casefold()
+    else:
+        history["_target_subline"]=pd.NA
+    if principal_col:
+        history["_target_principal"]=history[principal_col].astype("string").str.strip().str.casefold()
+    else:
+        history["_target_principal"]=pd.NA
+    item_by_subline={}
+    principal_by_subline={}
+    for subline,group in raw.groupby("SUBLINI_PRODUCT",sort=False):
+        item_by_subline[str(subline)]=str(group["ITEM_SUBLINI"].dropna().iloc[0]).strip().casefold().removesuffix(".0") if "ITEM_SUBLINI" in group and group["ITEM_SUBLINI"].notna().any() else ""
+        principal_by_subline[str(subline)]=str(group["PRINCIPLE ID"].dropna().iloc[0]).strip().casefold() if "PRINCIPLE ID" in group and group["PRINCIPLE ID"].notna().any() else ""
+    average_by_title={}
+    for subline in ho_by_subline:
+        candidates=history
+        item=item_by_subline.get(subline,""); principal=principal_by_subline.get(subline,"")
+        if item and candidates["_target_item"].notna().any(): candidates=candidates[candidates["_target_item"].eq(item)]
+        elif candidates["_target_subline"].notna().any(): candidates=candidates[candidates["_target_subline"].eq(subline.casefold())]
+        if principal and candidates["_target_principal"].notna().any(): candidates=candidates[candidates["_target_principal"].eq(principal)]
+        if average_basis=="Jumlah relasi aktif":
+            candidates=candidates[candidates[customer_col].notna()]
+            if sales_col:
+                candidates=candidates[pd.to_numeric(candidates[sales_col],errors="coerce").fillna(0)>0]
+            monthly=candidates.groupby(["_target_title","_target_period"])[customer_col].nunique()
+        else:
+            monthly=candidates.groupby(["_target_title","_target_period"])["_target_metric"].sum()
+        if monthly.empty:
+            average_by_title[subline]={}
+        else:
+            # Divide by 3, including months with no sales as zero.
+            totals=monthly.groupby(level=0).sum()/3.0
+            average_by_title[subline]={str(title):float(value) for title,value in totals.items() if pd.notna(title) and str(title).strip()}
+
+    result_rows=[]
+    for subline,group in raw.groupby("SUBLINI_PRODUCT",sort=False,dropna=False):
+        subline=str(subline); target=ho_by_subline[subline]
+        source_titles=group["SALESPERSON_POSITION"].astype("string").fillna("").str.strip().tolist()
+        had_blank_title=any(not title for title in source_titles)
+        titles=[title for title in source_titles if title]
+        weights=average_by_title.get(subline,{})
+        if not titles or had_blank_title:
+            titles=list(dict.fromkeys(titles+[title for title,value in weights.items() if value>0]))
+        if not titles:
+            raise ValueError(f"Tidak ada SALESPERSON_POSITION atau data historis untuk {subline}; target tidak bisa dibagi.")
+        # Keep source-provided salesperson assignments, and add positions found
+        # in the historical average when the subline has no assigned line.
+        titles=list(dict.fromkeys(titles))
+        if not any(weights.get(title,0)>0 for title in titles):
+            weights={title:1.0 for title in titles}
+        else:
+            weights={title:max(0.0,float(weights.get(title,0))) for title in titles}
+        total_weight=sum(weights.values())
+        raw_alloc=[target*(weights[title]/total_weight) if total_weight else target/len(titles) for title in titles]
+        if abs(target-round(target))<1e-8:
+            floors=[math.floor(value) for value in raw_alloc]
+            remainder=int(round(target))-sum(floors)
+            order=sorted(range(len(titles)),key=lambda idx:(raw_alloc[idx]-floors[idx],-idx),reverse=True)
+            for idx in order[:max(0,remainder)]: floors[idx]+=1
+            allocated=[float(value) for value in floors]
+        else:
+            allocated=raw_alloc
+        template=group.iloc[0].to_dict()
+        for title,amount in zip(titles,allocated):
+            row=dict(template)
+            row["SALESPERSON_POSITION"]=title
+            row["TARGET_CABANG"]=amount
+            row["AVERAGE_3_BULAN"]=float(average_by_title.get(subline,{}).get(title,0.0))
+            row["PORSI_TARGET_%"]=amount/target*100 if target else 0.0
+            result_rows.append(row)
+    result=pd.DataFrame(result_rows)
+    # Validate exact subline reconciliation to HO target.
+    check=result.groupby("SUBLINI_PRODUCT")["TARGET_CABANG"].sum()
+    for subline,total in check.items():
+        if not math.isclose(float(total),ho_by_subline[str(subline)],rel_tol=0,abs_tol=1e-7):
+            raise ArithmeticError(f"Hasil alokasi {subline} tidak sama dengan target HO.")
+    result["YEAR_ID"]=year; result["MONTH_ID"]=month
+    return result,year,month,average_basis
 def filter_options(df,kind):
     c=col(df,kind)
     if not c: return []
@@ -1953,7 +2124,7 @@ if st.session_state["dashboard_page"]=="Sasaran per Sales Person Title":
     st.session_state["dashboard_page"]="Sasaran Program"
 if "dashboard_section" not in st.session_state:
     st.session_state["dashboard_section"]=settings.get("dashboard_section","Program Push")
-_main_labels=["Performance Sales","Program Push","Menu Insentif","Report"]
+_main_labels=["Performance Sales","Program Push","Breakdown Target","Menu Insentif","Report"]
 st.markdown("<div class='main-nav-anchor'>NAVIGASI UTAMA</div>",unsafe_allow_html=True)
 main_section=st.radio(
     "Navigasi utama",_main_labels,horizontal=True,key="dashboard_section",
@@ -2662,6 +2833,110 @@ if df is None:
     else:
         st.info("Unggah workbook Excel transaksi dari sidebar untuk melihat dashboard. Target dapat disiapkan terpisah melalui template sasaran.")
     st.stop()
+
+if main_section=="Breakdown Target":
+    st.markdown("<div class='score-heading'>◇ BREAKDOWN TARGET</div>",unsafe_allow_html=True)
+    st.markdown("### Pembagian Target Bulanan per Sales Person")
+    st.caption("Target HO per SUBLINI_PRODUCT dibagi ke SALESPERSON_POSITION berdasarkan rata-rata 3 bulan lengkap sebelum bulan target. Total TARGET_CABANG setiap sublini direkonsiliasi agar sama persis dengan TARGET_REKOMENDASI_HO.")
+    _bt_controls=st.columns([1,1,2,2],gap="medium")
+    with _bt_controls[0]:
+        _bt_year=st.number_input("Tahun target",min_value=2000,max_value=2100,value=int(pd.Timestamp.now().year),step=1,key="breakdown_target_year")
+    with _bt_controls[1]:
+        _bt_month=st.selectbox("Bulan target",list(range(1,13)),index=int(pd.Timestamp.now().month)-1,format_func=lambda value:MONTHS[int(value)],key="breakdown_target_month")
+    with _bt_controls[2]:
+        _bt_basis=st.selectbox("Dasar rata-rata 3 bulan",["Sales Value Gross","Jumlah relasi aktif"],key="breakdown_target_basis",help="Pembagian menggunakan rata-rata per Sales Person dan produk selama tiga bulan kalender lengkap sebelum bulan target.")
+    with _bt_controls[3]:
+        st.markdown(f"<div class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(ACTIVE_BRANCH_NAME)} · {html.escape(ACTIVE_BRANCH_CODE)}</div>",unsafe_allow_html=True)
+    _bt_upload=st.file_uploader("Unggah file mentah target (.xlsx)",type=["xlsx"],key="breakdown_target_upload",help="File perlu memuat YEAR_ID, MONTH_ID, SUBLINI_PRODUCT, SALESPERSON_POSITION, dan TARGET_REKOMENDASI_HO.")
+    _bt_source_bytes=None; _bt_source_name=""
+    if _bt_upload is not None:
+        _bt_source_bytes=_bt_upload.getvalue(); _bt_source_name=_bt_upload.name
+    else:
+        _bt_saved_name=f"target_breakdown_raw_{ACTIVE_BRANCH_CODE}_{int(_bt_year)}_{int(_bt_month):02d}.xlsx"
+        _bt_saved_path=APP_DIR/"target_breakdown"/_bt_saved_name
+        _bt_drive_available=bool(st.secrets.get("gcp_service_account"))
+        if _bt_drive_available and st.button("Muat file mentah yang tersimpan di Google Drive",key="load_breakdown_target_drive",width="stretch"):
+            try:
+                if _drive_download_to_path(_bt_saved_name,_bt_saved_path,"target_breakdown",ACTIVE_BRANCH_CODE):
+                    st.session_state["_breakdown_target_loaded_file"]=_bt_saved_name
+                    st.success(f"File {_bt_saved_name} berhasil dimuat dari Google Drive.")
+                    st.rerun()
+                st.info("Belum ada file mentah untuk bulan tersebut di Google Drive.")
+            except Exception as _bt_load_error:
+                st.error(f"File mentah gagal dimuat dari Google Drive: {_bt_load_error}")
+        if st.session_state.get("_breakdown_target_loaded_file")==_bt_saved_name and _bt_saved_path.exists():
+            _bt_source_bytes=_bt_saved_path.read_bytes(); _bt_source_name=_bt_saved_name
+    if _bt_upload is not None and _bt_source_bytes:
+        _bt_fingerprint=hashlib.sha256(_bt_source_bytes).hexdigest()
+        if st.session_state.get("_breakdown_target_raw_fingerprint")!=_bt_fingerprint:
+            try:
+                _bt_uploaded_table=read_uploaded_file(_bt_upload.name,_bt_source_bytes) if _bt_upload is not None else read_uploaded_file(_bt_source_name,_bt_source_bytes)
+                _bt_uploaded_cols=_breakdown_target_columns(_bt_uploaded_table)
+                _bt_file_year=int(pd.to_numeric(_bt_uploaded_table[_bt_uploaded_cols["year"]],errors="coerce").dropna().iloc[0]) if _bt_uploaded_cols.get("year") and pd.to_numeric(_bt_uploaded_table[_bt_uploaded_cols["year"]],errors="coerce").notna().any() else int(_bt_year)
+                _bt_file_month=int(pd.to_numeric(_bt_uploaded_table[_bt_uploaded_cols["month"]],errors="coerce").dropna().iloc[0]) if _bt_uploaded_cols.get("month") and pd.to_numeric(_bt_uploaded_table[_bt_uploaded_cols["month"]],errors="coerce").notna().any() else int(_bt_month)
+                _bt_source_path=APP_DIR/"target_breakdown"/_bt_upload.name
+                _bt_source_path.parent.mkdir(parents=True,exist_ok=True)
+                _bt_source_path.write_bytes(_bt_source_bytes)
+                if st.secrets.get("gcp_service_account"):
+                    _bt_raw_drive_name=f"target_breakdown_raw_{ACTIVE_BRANCH_CODE}_{_bt_file_year}_{_bt_file_month:02d}.xlsx"
+                    _drive_upload_bytes(_bt_raw_drive_name,_bt_source_bytes,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "target_breakdown",ACTIVE_BRANCH_CODE)
+                    st.success("File mentah berhasil disimpan di Google Drive dan salinan kerja lokal.")
+                else:
+                    st.info("File mentah tersimpan pada sesi kerja lokal. Google Drive belum dapat ditulis karena kredensial Drive tidak tersedia.")
+                st.session_state["_breakdown_target_raw_fingerprint"]=_bt_fingerprint
+            except Exception as _bt_save_error:
+                st.error(f"File mentah gagal disimpan: {_bt_save_error}")
+    if _bt_source_bytes:
+        try:
+            _bt_source_df=read_uploaded_file(_bt_source_name,_bt_source_bytes)
+            _bt_result,_bt_result_year,_bt_result_month,_bt_used_basis=_prepare_target_breakdown(_bt_source_df,df,ACTIVE_BRANCH_CODE,_bt_basis)
+            if (_bt_result_year,_bt_result_month)!=(int(_bt_year),int(_bt_month)):
+                st.warning(f"Periode pada file ({_bt_result_month:02d}/{_bt_result_year}) berbeda dari periode pilihan ({int(_bt_month):02d}/{int(_bt_year)}). Nama file ekspor mengikuti periode di dalam file.")
+            _bt_total_ho=float(_bt_result.groupby("SUBLINI_PRODUCT")["TARGET_REKOMENDASI_HO"].first().sum())
+            _bt_total_branch=float(_bt_result["TARGET_CABANG"].sum())
+            _bt_summary=_bt_result.groupby("SUBLINI_PRODUCT",as_index=False).agg(
+                Target_HO=("TARGET_REKOMENDASI_HO","first"),Target_Cabang=("TARGET_CABANG","sum"),Sales_Person=("SALESPERSON_POSITION","nunique"))
+            _bt_summary=_bt_summary.rename(columns={"Target_HO":"Target HO","Target_Cabang":"Target Cabang","Sales_Person":"Sales Person"})
+            _bt_summary["Selisih"]=_bt_summary["Target Cabang"]-_bt_summary["Target HO"]
+            _bt_kpis=st.columns(4,gap="small")
+            _bt_kpis[0].metric("Total Target HO",f"{_bt_total_ho:,.0f}")
+            _bt_kpis[1].metric("Total Target Cabang",f"{_bt_total_branch:,.0f}")
+            _bt_kpis[2].metric("Sublini Produk",f"{_bt_result['SUBLINI_PRODUCT'].nunique():,}")
+            _bt_kpis[3].metric("Sales Person",f"{_bt_result['SALESPERSON_POSITION'].nunique():,}")
+            st.markdown("#### Rekonsiliasi Target per Sublini")
+            st.dataframe(_bt_summary,width="stretch",hide_index=True,column_config={"Target HO":st.column_config.NumberColumn(format="%,.0f"),"Target Cabang":st.column_config.NumberColumn(format="%,.0f"),"Selisih":st.column_config.NumberColumn(format="%,.0f")})
+            st.markdown("#### Hasil Breakdown per Sales Person")
+            _bt_display_cols=[c for c in ["YEAR_ID","MONTH_ID","KODE_CABANG","BISNIS","ITEM_SUBLINI","PRINCIPLE ID","SUBLINI_PRODUCT","CHANNEL_OUTLET_GROUP","SALESPERSON_POSITION","TERITORY_GEO_GROUP","TARGET_REKOMENDASI_HO","AVERAGE_3_BULAN","PORSI_TARGET_%","TARGET_CABANG"] if c in _bt_result.columns]
+            st.dataframe(_bt_result[_bt_display_cols],width="stretch",hide_index=True,column_config={
+                "TARGET_REKOMENDASI_HO":st.column_config.NumberColumn(format="%,.0f"),
+                "AVERAGE_3_BULAN":st.column_config.NumberColumn(format="%,.2f"),
+                "PORSI_TARGET_%":st.column_config.NumberColumn(format="%.2f%%"),
+                "TARGET_CABANG":st.column_config.NumberColumn(format="%,.0f")})
+            _bt_buffer=io.BytesIO()
+            _bt_reconciliation=_bt_result.groupby("SUBLINI_PRODUCT",as_index=False).agg(
+                TARGET_REKOMENDASI_HO=("TARGET_REKOMENDASI_HO","first"),TARGET_CABANG=("TARGET_CABANG","sum"))
+            with pd.ExcelWriter(_bt_buffer,engine="openpyxl") as _bt_writer:
+                _bt_result.to_excel(_bt_writer,index=False,sheet_name="Breakdown Target")
+                _bt_reconciliation.to_excel(_bt_writer,index=False,sheet_name="Rekonsiliasi")
+            _bt_export_bytes=_bt_buffer.getvalue()
+            _bt_export_name=f"breakdown_target_{ACTIVE_BRANCH_CODE}_{_bt_result_year}_{_bt_result_month:02d}.xlsx"
+            _bt_export_col1,_bt_export_col2=st.columns([1,1])
+            with _bt_export_col1:
+                st.download_button("⬇ Ekspor hasil breakdown (.xlsx)",data=_bt_export_bytes,file_name=_bt_export_name,mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",key="download_breakdown_target",width="stretch")
+            with _bt_export_col2:
+                if st.button("Terbitkan & simpan hasil ke Google Drive",key="publish_breakdown_target",type="primary",width="stretch"):
+                    try:
+                        _bt_export_path=APP_DIR/"target_breakdown"/_bt_export_name
+                        _bt_export_path.parent.mkdir(parents=True,exist_ok=True); _bt_export_path.write_bytes(_bt_export_bytes)
+                        _drive_file_id_created=_drive_upload_bytes(_bt_export_name,_bt_export_bytes,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","exports",ACTIVE_BRANCH_CODE)
+                        st.success(f"Hasil diterbitkan dan tersimpan di Google Drive. File ID: {_drive_file_id_created}")
+                    except Exception as _bt_publish_error:
+                        st.error(f"Hasil tersedia untuk diunduh, tetapi gagal disimpan ke Google Drive: {_bt_publish_error}")
+            st.caption(f"Periode {MONTHS[_bt_result_month]} {int(_bt_result_year)} · Basis: {_bt_used_basis} · Rata-rata dihitung dari tiga bulan lengkap sebelum bulan target.")
+        except Exception as _bt_error:
+            st.error(f"File breakdown target belum dapat diproses: {_bt_error}")
 
 def target_preview_for_config(program,params,metric):
     """Find the monthly target that should seed a program's weekly setting."""
