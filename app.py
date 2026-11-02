@@ -1445,6 +1445,48 @@ def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_
     result.attrs["expected_by_subline"]=expected_by_subline
     return result,year,month,average_basis
 
+def _parse_principal_target_paste(text):
+    """Parse pasted Principal ID and target totals from a spreadsheet or Markdown table."""
+    parsed=[]
+    for raw_line in str(text or "").splitlines():
+        line=raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("|") and line.endswith("|"):
+            cells=[cell.strip() for cell in line.strip("|").split("|")]
+        elif "\t" in line:
+            cells=[cell.strip() for cell in line.split("\t")]
+        elif ";" in line:
+            cells=[cell.strip() for cell in line.split(";")]
+        elif "," in line:
+            principal,_,amount=line.partition(",")
+            cells=[principal.strip(),amount.strip()]
+        else:
+            continue
+        if len(cells)<2 or all(set(cell)<=set("-: ") for cell in cells):
+            continue
+        header=" ".join(cells[:2]).casefold()
+        if "princip" in header and any(token in header for token in ("target","sum","rekomen")):
+            continue
+        pid=str(cells[0]).strip().strip("`*")
+        number=str(cells[1]).strip().replace("\u00a0","").replace(" ","")
+        number=number.replace("Rp","").replace("rp","")
+        if "," in number and "." in number and number.rfind(",")>number.rfind("."):
+            number=number.replace(".","").replace(",",".")
+        else:
+            number=number.replace(",","")
+        try:
+            amount=float(number)
+        except (TypeError,ValueError):
+            raise ValueError(f"Target tidak valid untuk Principal ID {pid}: {cells[1]}")
+        if not pid or not math.isfinite(amount) or amount<0:
+            raise ValueError(f"Principal ID atau target tidak valid: {line}")
+        parsed.append((pid,amount))
+    if not parsed:
+        raise ValueError("Tempel tabel dengan dua kolom: PRINCIPLE ID dan TARGET_REKOMENDASI_HO.")
+    result=pd.DataFrame(parsed,columns=["PRINCIPLE ID","TARGET_PRINCIPAL"])
+    return result.groupby("PRINCIPLE ID",as_index=False,sort=False)["TARGET_PRINCIPAL"].sum()
+
 def _prepare_principal_channel_breakdown(history_frame, year, month, principal_targets, average_basis="Sales Value Gross", selected_business_group=None):
     """Allocate manually entered Principal targets to sellers and outlet channels by 3-month history."""
     title_col=col(history_frame,"salesperson"); principal_col=col(history_frame,"principal")
@@ -2969,6 +3011,27 @@ if main_section=="Breakdown Target":
                 st.session_state["_bt_manual_period"]=_bt_period_key
                 st.session_state["_bt_manual_targets"]=_bt_principals.copy()
                 st.session_state.pop("_bt_allocations",None)
+            st.caption("Tempel dua kolom dari Excel atau Markdown. Kolom pertama = PRINCIPLE ID; kolom kedua = TARGET_REKOMENDASI_HO. ID yang ditempel akan langsung mengisi tabel target.")
+            _bt_target_paste=st.text_area("Tempel daftar target per Principal ID",key="bt_principal_target_paste",height=140,placeholder="PRINCIPLE ID\tTARGET_REKOMENDASI_HO\nDEC\t449998\nABI\t189958845")
+            if st.button("Masukkan target ke tabel",key="bt_apply_pasted_targets"):
+                try:
+                    _bt_pasted_targets=_parse_principal_target_paste(_bt_target_paste)
+                    _bt_current_targets=st.session_state.get("_bt_manual_targets",_bt_principals.copy()).copy()
+                    _bt_id_lookup={str(value).strip().casefold():index for index,value in _bt_current_targets["PRINCIPLE ID"].items()}
+                    for _,_bt_row in _bt_pasted_targets.iterrows():
+                        _bt_pid=str(_bt_row["PRINCIPLE ID"]).strip()
+                        _bt_index=_bt_id_lookup.get(_bt_pid.casefold())
+                        if _bt_index is None:
+                            _bt_index=len(_bt_current_targets)
+                            _bt_current_targets.loc[_bt_index]=[ _bt_pid, _bt_pid, 0.0 ]
+                            _bt_id_lookup[_bt_pid.casefold()]=_bt_index
+                        _bt_current_targets.at[_bt_index,"TARGET_PRINCIPAL"]=_bt_row["TARGET_PRINCIPAL"]
+                    st.session_state["_bt_manual_targets"]=_bt_current_targets.reset_index(drop=True)
+                    st.session_state.pop("_bt_allocations",None)
+                    st.session_state.pop("bt_manual_targets_editor",None)
+                    st.success(f"{len(_bt_pasted_targets):,} Principal ID dimasukkan ke tabel target.")
+                except Exception as _bt_paste_err:
+                    st.error(f"Daftar target gagal dibaca: {_bt_paste_err}")
             _bt_targets=st.data_editor(st.session_state.get("_bt_manual_targets",_bt_principals),key="bt_manual_targets_editor",hide_index=True,width="stretch",num_rows="fixed",disabled=["PRINCIPLE ID","PRINCIPAL_NAME"],column_config={"TARGET_PRINCIPAL":st.column_config.NumberColumn("Target bulan berjalan",min_value=0,step=1000,format="%,.0f")})
             st.session_state["_bt_manual_targets"]=_bt_targets
             if st.button("Buat breakdown per Sales Person dan Channel",key="bt_generate_allocations",type="primary"):
