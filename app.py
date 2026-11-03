@@ -2882,9 +2882,15 @@ def read_normalized_monthly_branch(branch_code, paths, signature):
         path=Path(raw_path)
         if path.suffix.lower()!=".xlsx":
             continue
+        period_parts=path.stem.rsplit("_",2)
+        if len(period_parts)!=3 or not period_parts[-2].isdigit() or not period_parts[-1].isdigit():
+            raise ValueError(f"Nama file bulanan harus berakhir dengan tahun_bulan: {path.name}")
+        expected_year=int(period_parts[-2]); expected_month=int(period_parts[-1])
+        if not 1<=expected_month<=12:
+            raise ValueError(f"Bulan pada nama file tidak valid: {path.name}")
         normalized_path=cache_dir/f"{path.stem}.parquet"
         marker_path=cache_dir/f"{path.stem}.json"
-        file_version=f"{path.stat().st_mtime_ns}:{path.stat().st_size}"
+        file_version=f"{path.stat().st_mtime_ns}:{path.stat().st_size}:period-filter-v1"
         piece=None
         if normalized_path.exists() and marker_path.exists():
             try:
@@ -2894,6 +2900,17 @@ def read_normalized_monthly_branch(branch_code, paths, signature):
                 piece=None
         if piece is None:
             piece=normalize(pd.read_excel(path,engine="calamine"),copy=False)
+            year_col=col(piece,"year"); month_col=col(piece,"month")
+            if not year_col or not month_col:
+                raise ValueError(f"Kolom Year dan Month tidak ditemukan di {path.name}.")
+            row_year=pd.to_numeric(piece[year_col],errors="coerce")
+            row_month=_month_number_series(piece[month_col])
+            date_col=col(piece,"date")
+            if date_col and (row_year.isna().any() or row_month.isna().any()):
+                row_dates=pd.to_datetime(piece[date_col],errors="coerce")
+                row_year=row_year.fillna(row_dates.dt.year)
+                row_month=row_month.fillna(row_dates.dt.month)
+            piece=piece.loc[row_year.eq(expected_year)&row_month.eq(expected_month)].copy()
             for name in piece.columns:
                 if not pd.api.types.is_numeric_dtype(piece[name].dtype):
                     piece[name]=piece[name].astype("category")
