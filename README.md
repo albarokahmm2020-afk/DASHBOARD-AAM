@@ -32,6 +32,6 @@ storage_folder_id = "ID_FOLDER_SHARED_DRIVE"
 
 ## Breakdown Target bulanan
 
-Buka **Navigasi utama → Breakdown Target**. Tahap 1: pilih periode, masukkan target berjalan per Principal ID, lalu generate pembagian ke Sales Person Title dan Channel Outlet Group memakai rata-rata tiga bulan. Edit `ADJUST_TARGET` untuk mengoreksi alokasi. Tahap 2: unggah file mentah; dashboard mencocokkan Seller, Principal ID, dan Channel, lalu mengisi `TARGET_CABANG` dan menyediakan ekspor Excel.
+Buka **Navigasi utama → Breakdown Target**. Tahap 1: pilih periode dan Business Group, unggah file mapping assignment, masukkan target berjalan per Principal ID, lalu generate pembagian ke Sales Person Title dan Channel Outlet Group. Mapping hanya memakai assignment aktif untuk cabang yang dipilih, dengan `BISNIS` + `POSITION_CODE` + `SALES_CHANNEL`; channel yang boleh diberikan ke tiap posisi dibatasi oleh mapping, sedangkan bobot pembagian di antara channel tersebut mengikuti kontribusi historis tiga bulan. Edit `ADJUST_TARGET` untuk mengoreksi alokasi. Tahap 2: unggah file mentah; dashboard mencocokkan Seller, Principal ID, dan Channel, lalu mengisi `TARGET_CABANG` dan menyediakan ekspor Excel.
 
 `TARGET_CABANG` dibagi ke baris file mentah menurut bobot `TARGET_REKOMENDASI_HO` di dalam kombinasi Seller, Principal ID, dan Channel. Hasil ekspor mempertahankan sheet input serta menambah sheet `Breakdown`. File diproses di sesi dashboard; unduh hasil sebelum meninggalkan dashboard. File tidak disimpan otomatis ke Google Drive.
