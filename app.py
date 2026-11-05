@@ -1757,11 +1757,49 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
         raise ValueError("Tidak ada riwayat tiga bulan pada Business Group ini untuk membagi target ke Sales Person dan Channel.")
     history_sellers=hist["_seller"].dropna().drop_duplicates()
     history_seller_keys={key(seller).casefold() for seller in history_sellers}
+    history_seller_labels={key(seller).casefold():str(seller) for seller in history_sellers}
     unmapped_sellers=sorted(
         str(seller) for seller in history_sellers
         if key(seller).casefold() not in mapped_sellers
     )
     mapped_sellers_without_history=sorted(mapped_sellers-history_seller_keys)
+    database_channels_by_seller={}
+    for seller,channel in hist[["_seller","_channel"]].drop_duplicates().itertuples(index=False,name=None):
+        seller_key=key(seller).casefold()
+        database_channels_by_seller.setdefault(seller_key,{}).setdefault(key(channel).casefold(),str(channel).strip())
+    matched_channels_by_seller={}
+    unmatched_channel_assignments=[]
+    for seller_key in mapped_sellers:
+        mapped_channels=channel_mapping.get((business_key,seller_key),())
+        seller_database_channels=database_channels_by_seller.get(seller_key,{})
+        unmatched_channel_assignments.extend(
+            (history_seller_labels.get(seller_key,seller_key),str(channel).strip())
+            for channel in dict.fromkeys(mapped_channels)
+            if key(channel).casefold() not in seller_database_channels
+        )
+        matched_channels_by_seller[seller_key]=tuple(
+            seller_database_channels[channel_key]
+            for channel_key in dict.fromkeys(key(value).casefold() for value in mapped_channels)
+            if channel_key in seller_database_channels
+        )
+    matching_sellers={seller for seller,channels in matched_channels_by_seller.items() if channels}
+    if not matching_sellers:
+        raise ValueError(
+            f"Tidak ada SALES_CHANNEL pada mapping yang cocok dengan Channel_group database "
+            f"untuk Business Group {selected_business_group}."
+        )
+    hist["_seller_key"]=hist["_seller"].map(lambda value:key(value).casefold())
+    hist["_channel_key"]=hist["_channel"].map(lambda value:key(value).casefold())
+    matched_channel_keys_by_seller={
+        seller:{key(channel).casefold() for channel in channels}
+        for seller,channels in matched_channels_by_seller.items()
+        if channels
+    }
+    matched_history_mask=pd.Series(False,index=hist.index)
+    for seller,channels in matched_channel_keys_by_seller.items():
+        matched_history_mask|=hist["_seller_key"].eq(seller)&hist["_channel_key"].isin(channels)
+    hist=hist.loc[matched_history_mask].copy()
+    mapped_sellers_without_channel_match=sorted((mapped_sellers&history_seller_keys)-matching_sellers)
     rows=[]; skipped_no_history=[]; skipped_no_weight=[]; fallback_ids=[]
     for _,target in principal_targets.iterrows():
         pid=str(target["PRINCIPLE ID"]).strip(); total_value=pd.to_numeric(target["TARGET_PRINCIPAL"],errors="coerce"); total=int(math.floor(abs(float(total_value))+0.5)) if pd.notna(total_value) else 0
@@ -1772,17 +1810,17 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
             subset=hist
         seller_weights=subset.groupby("_seller",observed=True)["_weight"].sum().clip(lower=0)
         seller_weights=seller_weights.loc[
-            [seller for seller in seller_weights.index if key(seller).casefold() in mapped_sellers]
+            [seller for seller in seller_weights.index if key(seller).casefold() in matching_sellers]
         ]
         if seller_weights.empty:
-            raise ValueError(f"Tidak ada Sales Person Title pada riwayat yang memiliki mapping aktif untuk Business Group {selected_business_group}.")
+            raise ValueError(f"Tidak ada Sales Person Title yang memiliki pasangan channel database dan mapping aktif untuk Business Group {selected_business_group}.")
         denom=float(seller_weights.sum())
         if denom<=0:
             seller_weights=pd.Series(1.0,index=seller_weights.index,dtype="float64")
             denom=float(seller_weights.sum())
         seller_targets=_allocate_integer_amount(total,seller_weights)
         for seller,seller_weight in seller_weights.items():
-            allowed_channels=channel_mapping.get((business_key,key(seller).casefold()),())
+            allowed_channels=matched_channels_by_seller.get(key(seller).casefold(),())
             if not allowed_channels:
                 continue
             seller_history=subset[subset["_seller"].eq(seller)]
@@ -1812,6 +1850,8 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     result.attrs["fallback_ids"]=fallback_ids
     result.attrs["unmapped_sellers"]=unmapped_sellers
     result.attrs["mapped_sellers_without_history"]=mapped_sellers_without_history
+    result.attrs["mapped_sellers_without_channel_match"]=mapped_sellers_without_channel_match
+    result.attrs["unmatched_channel_assignments"]=unmatched_channel_assignments
     return result
 
 def _apply_principal_breakdown_to_raw(raw_frame, allocations):
@@ -3487,6 +3527,8 @@ if main_section=="Breakdown Target":
                     _bt_skipped_weight=st.session_state["_bt_allocations"].attrs.get("skipped_no_weight",[])
                     _bt_unmapped_sellers=st.session_state["_bt_allocations"].attrs.get("unmapped_sellers",[])
                     _bt_mapped_without_history=st.session_state["_bt_allocations"].attrs.get("mapped_sellers_without_history",[])
+                    _bt_mapped_without_channel_match=st.session_state["_bt_allocations"].attrs.get("mapped_sellers_without_channel_match",[])
+                    _bt_unmatched_channel_assignments=st.session_state["_bt_allocations"].attrs.get("unmatched_channel_assignments",[])
                     st.success("Breakdown siap disesuaikan.")
                     if _bt_unmapped_sellers:
                         st.warning(
@@ -3499,6 +3541,23 @@ if main_section=="Breakdown Target":
                             f"{len(_bt_mapped_without_history):,} POSITION_CODE pada mapping tidak ditemukan "
                             f"di riwayat tiga bulan sehingga belum menerima alokasi: "
                             f"{', '.join(_bt_mapped_without_history[:20])}{'…' if len(_bt_mapped_without_history)>20 else ''}."
+                        )
+                    if _bt_mapped_without_channel_match:
+                        st.warning(
+                            f"{len(_bt_mapped_without_channel_match):,} POSITION_CODE tidak memiliki "
+                            f"SALES_CHANNEL yang cocok dengan Channel_group database; posisi tersebut tidak "
+                            f"menerima alokasi: {', '.join(_bt_mapped_without_channel_match[:20])}"
+                            f"{'…' if len(_bt_mapped_without_channel_match)>20 else ''}."
+                        )
+                    if _bt_unmatched_channel_assignments:
+                        _bt_unmatched_channel_labels=[
+                            f"{seller} · {channel}" for seller,channel in _bt_unmatched_channel_assignments
+                        ]
+                        st.info(
+                            f"{len(_bt_unmatched_channel_labels):,} pasangan POSITION_CODE · SALES_CHANNEL "
+                            f"tidak ditemukan pada Channel_group database dan tidak digunakan: "
+                            f"{', '.join(_bt_unmatched_channel_labels[:20])}"
+                            f"{'…' if len(_bt_unmatched_channel_labels)>20 else ''}."
                         )
                     if _bt_skipped_history or _bt_skipped_weight:
                         _bt_skipped_ids=sorted(set(_bt_skipped_history+_bt_skipped_weight))
