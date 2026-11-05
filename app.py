@@ -2980,6 +2980,48 @@ def _google_drive_database_path(source_id, destination, service_account_info, is
 def read_uploaded_file(filename,payload,sheet_name=0):
     return pd.read_csv(io.BytesIO(payload)) if filename.lower().endswith(".csv") else pd.read_excel(io.BytesIO(payload),sheet_name=sheet_name)
 
+def _read_raw_target_upload(payload,sheet_name=0):
+    """Read ITEM_SUBLINI as text, retaining text and zero-padded Excel values."""
+    from openpyxl import load_workbook
+
+    frame=pd.read_excel(io.BytesIO(payload),sheet_name=sheet_name,dtype=object)
+    item_column=_breakdown_target_columns(frame)["item"]
+    if not item_column:
+        return frame
+
+    workbook=load_workbook(io.BytesIO(payload),read_only=False,data_only=True)
+    try:
+        worksheet=workbook[sheet_name] if isinstance(sheet_name,str) else workbook.worksheets[int(sheet_name)]
+        item_headers={"item sublini","item_sublini","item"}
+        item_index=next(
+            (index for index,cell in enumerate(worksheet[1])
+             if cell.value is not None and key(cell.value) in {key(header) for header in item_headers}),
+            None,
+        )
+        if item_index is None:
+            return frame
+
+        values=[]
+        for row_number in range(2,len(frame)+2):
+            cell=worksheet.cell(row=row_number,column=item_index+1)
+            value=cell.value
+            if isinstance(value,str):
+                values.append(value)
+            elif isinstance(value,(int,float)) and not isinstance(value,bool):
+                number_format=cell.number_format
+                if float(value).is_integer() and number_format and all(char=="0" for char in number_format):
+                    values.append(f"{int(value):0{len(number_format)}d}")
+                elif float(value).is_integer():
+                    values.append(str(int(value)))
+                else:
+                    values.append(str(value))
+            else:
+                values.append(value)
+        frame[item_column]=pd.Series(values,index=frame.index,dtype="string")
+        return frame
+    finally:
+        workbook.close()
+
 def resolve_branch_sheet(sheet_names,branch_code):
     """Resolve a workbook tab for a branch, allowing city names and legacy BDG Sheet1."""
     normalized={key(name):name for name in sheet_names}
@@ -3402,13 +3444,14 @@ if main_section=="Breakdown Target":
                     st.dataframe(_bt_edited,width="stretch",height=440,hide_index=True)
     with _bt_tabs[1]:
         _bt_raw_upload=st.file_uploader("Unggah file mentah target (.xlsx)",type=["xlsx"],key="bt_raw_target_upload",help="TARGET_CABANG akan diisi dari breakdown tahap 1, dicocokkan menurut Sales Person Title, Principal ID, dan Channel Outlet Group.")
-        st.caption("TARGET_REKOMENDASI_HO tetap dari template. Hanya TARGET_CABANG yang berubah; total harus sama per periode, bisnis, ITEM_SUBLINI, Principal ID, dan SUBLINI_PRODUCT.")
+        st.caption("TARGET_REKOMENDASI_HO tetap dari template. Hanya TARGET_CABANG yang berubah; total harus sama per periode, bisnis, ITEM_SUBLINI, Principal ID, dan SUBLINI_PRODUCT. Nol di depan ITEM_SUBLINI dipertahankan.")
         if st.session_state.get("_bt_allocations") is None or st.session_state["_bt_allocations"].empty:
             st.info("Selesaikan breakdown tahap 1 terlebih dahulu.")
         elif _bt_raw_upload is not None:
             try:
                 _bt_raw_bytes=_bt_raw_upload.getvalue()
-                _bt_raw_df=read_uploaded_file(_bt_raw_upload.name,_bt_raw_bytes)
+                _bt_sheet=pd.ExcelFile(io.BytesIO(_bt_raw_bytes)).sheet_names[0]
+                _bt_raw_df=_read_raw_target_upload(_bt_raw_bytes,_bt_sheet)
                 _bt_final=_apply_principal_breakdown_to_raw(_bt_raw_df,st.session_state["_bt_allocations"])
                 _bt_added_rows=len(_bt_final)-len(_bt_raw_df)
                 st.success("Validasi lolos: TARGET_REKOMENDASI_HO tidak diubah. Total TARGET_CABANG sama dengan HO per tahun, bulan, cabang, bisnis, item, Principal ID, dan sublini.")
@@ -3431,7 +3474,6 @@ if main_section=="Breakdown Target":
                 st.dataframe(_bt_recon,width="stretch",height=320,hide_index=True)
                 st.dataframe(_bt_final,width="stretch",height=460,hide_index=True)
                 _bt_out=io.BytesIO()
-                _bt_sheet=pd.ExcelFile(io.BytesIO(_bt_raw_bytes)).sheet_names[0]
                 with pd.ExcelWriter(_bt_out,engine="openpyxl") as _bt_writer:
                     _bt_final.to_excel(_bt_writer,index=False,sheet_name=str(_bt_sheet)[:31])
                     st.session_state["_bt_allocations"].to_excel(_bt_writer,index=False,sheet_name="Breakdown")
