@@ -3,6 +3,7 @@ import io
 import base64
 import json
 import hashlib
+import hmac
 import inspect
 import html
 import math
@@ -793,6 +794,42 @@ def build_ppt_sasaran_program(programs_list, program_labels_fn,
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="CHP AAM | Push Performance", page_icon="📊", layout="wide")
+
+def _authenticate_shared_password():
+    submitted=str(st.session_state.get("_login_password_input",""))
+    if hmac.compare_digest(submitted,_configured_shared_password):
+        st.session_state["_dashboard_authenticated"]=True
+        st.session_state["_login_error"]=""
+    else:
+        st.session_state["_dashboard_authenticated"]=False
+        st.session_state["_login_error"]="Password tidak sesuai. Periksa kembali lalu coba lagi."
+    st.session_state["_login_password_input"]=""
+
+_auth_settings=st.secrets.get("auth",{})
+_configured_shared_password=_auth_settings.get("shared_password","") if hasattr(_auth_settings,"get") else ""
+_shared_password_ready=isinstance(_configured_shared_password,str) and len(_configured_shared_password)>=16
+
+if not _shared_password_ready:
+    st.error("Login belum dikonfigurasi. Admin perlu mengatur `auth.shared_password` di Streamlit Secrets dengan minimal 16 karakter.")
+    st.stop()
+
+if not st.session_state.get("_dashboard_authenticated",False):
+    st.markdown("## CHP AAM Dashboard")
+    st.caption("Masukkan password akses untuk melanjutkan.")
+    with st.form("dashboard_login_form",clear_on_submit=True):
+        st.text_input("Password akses",type="password",key="_login_password_input")
+        st.form_submit_button("Masuk",type="primary",on_click=_authenticate_shared_password)
+    if st.session_state.get("_login_error"):
+        st.error(st.session_state["_login_error"])
+    st.stop()
+
+with st.sidebar:
+    st.caption("Login aktif")
+    if st.button("Keluar",key="dashboard_logout",width="stretch"):
+        st.session_state["_dashboard_authenticated"]=False
+        st.session_state.pop("_login_error",None)
+        st.rerun()
+
 RED, NAVY, BLUE = "#C8102E", "#000737", "#22396F"
 MIDNIGHT_BLUE, CREAM = "#0C1D42", "#FCF1CF"
 PROGRAMS = ["RB CHD", "NOO PDB", "PB NOZA", "PB HYC", "PB LUMA"]
@@ -1061,7 +1098,7 @@ def _as_download_bytes(data):
 # configuration are synchronized automatically through their own save paths.
 
 def _reset_branch_session():
-    _keep={"active_branch_code","db"}
+    _keep={"active_branch_code","db","_dashboard_authenticated"}
     for _state_key in list(st.session_state.keys()):
         if _state_key not in _keep:
             del st.session_state[_state_key]
