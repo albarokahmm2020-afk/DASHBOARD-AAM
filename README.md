@@ -8,18 +8,6 @@ The Streamlit interface uses the light enterprise theme configured in `.streamli
 
 Run the dashboard locally with `streamlit run app.py` after installing `requirements.txt`. Google Drive data restoration and sync remain optional and require credentials in Streamlit secrets.
 
-## Login dashboard
-
-Dashboard meminta satu password bersama sebelum konten dimuat. Di Streamlit Community Cloud, buka **App settings → Secrets** lalu tambahkan:
-
-```toml
-[auth]
-shared_password = "GANTI_DENGAN_PASSWORD_ACAK_MINIMAL_16_KARAKTER"
-```
-
-Gunakan password acak yang panjang dan jangan simpan di repository atau kirim melalui kanal publik. Simpan perubahan Secrets lalu restart/reboot aplikasi. Jika secret belum disetel atau terlalu pendek, dashboard tetap tertutup. Pengguna dapat memilih **Keluar** dari sidebar.
-
-Password bersama tidak memverifikasi email atau membatasi domain; siapa pun yang memilikinya dapat masuk. Ganti password di Secrets untuk mencabut akses dari semua sesi baru. Untuk akses yang dibatasi per akun/domain kantor, gunakan autentikasi Google/OIDC sebagai pengganti password bersama.
 # Update database dashboard
 
 Untuk pembaruan harian, jangan edit `database_push_branches.xlsx` karena ukurannya terlalu besar untuk Google Sheets. Dashboard secara default membaca file dari `database_monthly_split/<BRANCH>/` agar hanya mengambil data cabang aktif dan memakai cache lokal untuk file yang tidak berubah. Jika folder bulanan untuk cabang belum memiliki workbook XLSX, dashboard memakai workbook gabungan sebagai fallback.
