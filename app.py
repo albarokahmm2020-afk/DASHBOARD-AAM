@@ -2904,6 +2904,8 @@ def read_normalized_monthly_branch(branch_code, paths, signature):
             if not year_col or not month_col:
                 raise ValueError(f"Kolom Year dan Month tidak ditemukan di {path.name}.")
             row_year=pd.to_numeric(piece[year_col],errors="coerce")
+            if expected_year>=1000:
+                row_year=row_year.mask(row_year.eq(expected_year%100),expected_year)
             row_month=_month_number_series(piece[month_col])
             date_col=col(piece,"date")
             if date_col and (row_year.isna().any() or row_month.isna().any()):
