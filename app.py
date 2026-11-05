@@ -1260,6 +1260,49 @@ def _breakdown_target_columns(frame):
     return {name:next((lookup[key(candidate)] for candidate in candidates if key(candidate) in lookup),None)
             for name,candidates in aliases.items()}
 
+def _channel_assignment_map(frame, branch_code):
+    """Build active channel assignments keyed by business group and position."""
+    lookup={key(column):column for column in frame.columns}
+    aliases={
+        "branch":["branch_code","branch code"],
+        "active":["isactive","is active"],
+        "business":["bisnis","business group","business_group"],
+        "position":["position_code","position code"],
+        "channel":["sales_channel","sales channel"],
+    }
+    columns={name:next((lookup[key(alias)] for alias in candidates if key(alias) in lookup),None)
+             for name,candidates in aliases.items()}
+    missing=[name for name,column in columns.items() if not column]
+    if missing:
+        raise ValueError("File mapping wajib memuat kolom BRANCH_CODE, ISACTIVE, BISNIS, POSITION_CODE, dan SALES_CHANNEL.")
+
+    active_values=frame[columns["active"]].astype("string").str.strip().str.casefold()
+    active_mask=pd.to_numeric(active_values,errors="coerce").eq(1)|active_values.isin({"true","yes","y","active"})
+    branch_values=frame[columns["branch"]].astype("string").str.strip().str.upper()
+    selected=frame.loc[branch_values.eq(str(branch_code).strip().upper())&active_mask,
+                       [columns["business"],columns["position"],columns["channel"]]].copy()
+    if selected.empty:
+        raise ValueError(f"Tidak ada mapping aktif untuk cabang {branch_code}.")
+
+    assignments={}
+    for business,position,channel in selected.itertuples(index=False,name=None):
+        if pd.isna(business) or pd.isna(position) or pd.isna(channel):
+            continue
+        business=str(business).strip(); position=str(position).strip(); channel=str(channel).strip()
+        if not business or not position or not channel:
+            continue
+        pair=(key(business).casefold(),key(position).casefold())
+        assignments.setdefault(pair,{})[key(channel).casefold()]=channel
+    result={pair:tuple(channels.values()) for pair,channels in assignments.items()}
+    if not result:
+        raise ValueError(f"Mapping aktif untuk cabang {branch_code} tidak memiliki BISNIS, POSITION_CODE, dan SALES_CHANNEL yang lengkap.")
+    return result
+
+@st.cache_data(show_spinner=False)
+def _read_channel_assignment_map(payload, branch_code):
+    frame=pd.read_excel(io.BytesIO(payload),dtype=object)
+    return _channel_assignment_map(frame,branch_code)
+
 def _prepare_target_breakdown(source_frame, history_frame, branch_code, average_basis="Sales Value Gross"):
     """Split HO target to salesperson first, then to Principal ID by matching subline history."""
     raw=source_frame.copy()
@@ -1650,7 +1693,7 @@ def _build_breakdown_seller_summary(history_frame, allocations, year, month, sel
     history=history[history["_period"].isin(prior)].copy()
     bg_col=col(history,"business_group")
     if selected_business_group and bg_col:
-        history=history[history[bg_col].astype("string").str.strip().eq(str(selected_business_group).strip())]
+        history=history[history[bg_col].astype("string").str.strip().str.casefold().eq(str(selected_business_group).strip().casefold())]
     history["_seller"]=history[seller_col].astype("string").str.strip()
     history["_sales"]=pd.to_numeric(history[sales_col],errors="coerce").fillna(0)
     history["_target"]=pd.to_numeric(history[target_col],errors="coerce").fillna(0) if target_col else 0.0
@@ -1678,12 +1721,18 @@ def _build_breakdown_seller_summary(history_frame, allocations, year, month, sel
         rows.append(row)
     return pd.DataFrame(rows)
 
-def _prepare_principal_channel_breakdown(history_frame, year, month, principal_targets, average_basis="Sales Value Gross", selected_business_group=None):
-    """Allocate each Principal target by seller contribution, then channel contribution."""
+def _prepare_principal_channel_breakdown(history_frame, year, month, principal_targets, average_basis="Sales Value Gross", selected_business_group=None, channel_mapping=None):
+    """Allocate target by seller contribution and mapped, history-weighted channels."""
     title_col=col(history_frame,"salesperson"); principal_col=col(history_frame,"principal")
     channel_col=col(history_frame,"channel_group"); date_col=col(history_frame,"date")
     sales_col=col(history_frame,"sales")
     business_col=col(history_frame,"business_group")
+    if not channel_mapping:
+        raise ValueError("Unggah file mapping assignment untuk menentukan channel per Sales Person Title.")
+    business_key=key(selected_business_group or "").casefold()
+    mapped_sellers={position for business,position in channel_mapping if business==business_key}
+    if not mapped_sellers:
+        raise ValueError(f"Tidak ada mapping channel aktif untuk Business Group {selected_business_group}.")
     if not all([title_col,principal_col,channel_col,date_col]):
         raise ValueError("Riwayat wajib memuat tanggal, Sales Person Title, Principal ID, dan Channel Outlet Group.")
     if not sales_col:
@@ -1697,7 +1746,7 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
         dates=pd.to_datetime(history_frame[date_col],errors="coerce"); hy=dates.dt.year; hm=dates.dt.month
     periods=hy*12+(hm-1); hist=history_frame.loc[periods.isin(prior)].copy()
     if selected_business_group and business_col:
-        hist=hist[hist[business_col].astype("string").str.strip().eq(str(selected_business_group).strip())]
+        hist=hist[hist[business_col].astype("string").str.strip().str.casefold().eq(str(selected_business_group).strip().casefold())]
     hist["_pid"]=hist[principal_col].astype("string").str.strip()
     hist["_seller"]=hist[title_col].astype("string").str.strip()
     hist["_channel"]=hist[channel_col].astype("string").str.strip()
@@ -1705,6 +1754,13 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     hist["_weight"]=pd.to_numeric(hist[sales_col],errors="coerce").fillna(0).clip(lower=0)
     if hist.empty:
         raise ValueError("Tidak ada riwayat tiga bulan pada Business Group ini untuk membagi target ke Sales Person dan Channel.")
+    history_sellers=hist["_seller"].dropna().drop_duplicates()
+    history_seller_keys={key(seller).casefold() for seller in history_sellers}
+    unmapped_sellers=sorted(
+        str(seller) for seller in history_sellers
+        if key(seller).casefold() not in mapped_sellers
+    )
+    mapped_sellers_without_history=sorted(mapped_sellers-history_seller_keys)
     rows=[]; skipped_no_history=[]; skipped_no_weight=[]; fallback_ids=[]
     for _,target in principal_targets.iterrows():
         pid=str(target["PRINCIPLE ID"]).strip(); total_value=pd.to_numeric(target["TARGET_PRINCIPAL"],errors="coerce"); total=int(math.floor(abs(float(total_value))+0.5)) if pd.notna(total_value) else 0
@@ -1714,17 +1770,33 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
             fallback_ids.append(pid)
             subset=hist
         seller_weights=subset.groupby("_seller",observed=True)["_weight"].sum().clip(lower=0)
+        seller_weights=seller_weights.loc[
+            [seller for seller in seller_weights.index if key(seller).casefold() in mapped_sellers]
+        ]
+        if seller_weights.empty:
+            raise ValueError(f"Tidak ada Sales Person Title pada riwayat yang memiliki mapping aktif untuk Business Group {selected_business_group}.")
         denom=float(seller_weights.sum())
         if denom<=0:
             seller_weights=pd.Series(1.0,index=seller_weights.index,dtype="float64")
             denom=float(seller_weights.sum())
         seller_targets=_allocate_integer_amount(total,seller_weights)
         for seller,seller_weight in seller_weights.items():
+            allowed_channels=channel_mapping.get((business_key,key(seller).casefold()),())
+            if not allowed_channels:
+                continue
             seller_history=subset[subset["_seller"].eq(seller)]
-            channel_weights=seller_history.groupby("_channel",observed=True)["_weight"].sum().clip(lower=0)
+            history_channel_weights=seller_history.groupby("_channel",observed=True)["_weight"].sum().clip(lower=0)
+            history_weights_by_channel={}
+            for history_channel,weight in history_channel_weights.items():
+                normalized_channel=key(history_channel).casefold()
+                history_weights_by_channel[normalized_channel]=history_weights_by_channel.get(normalized_channel,0.0)+float(weight)
+            channel_weights=pd.Series(
+                [history_weights_by_channel.get(key(channel).casefold(),0.0) for channel in allowed_channels],
+                index=list(allowed_channels),dtype="float64",
+            )
             seller_total=float(channel_weights.sum())
             if seller_total<=0:
-                channel_weights=pd.Series(1.0,index=seller_history["_channel"].drop_duplicates().tolist(),dtype="float64")
+                channel_weights=pd.Series(1.0,index=list(allowed_channels),dtype="float64")
                 seller_total=float(channel_weights.sum())
             seller_share=float(seller_weight)/denom
             seller_target=int(seller_targets.loc[seller])
@@ -1737,6 +1809,8 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     result.attrs["skipped_no_history"]=skipped_no_history
     result.attrs["skipped_no_weight"]=skipped_no_weight
     result.attrs["fallback_ids"]=fallback_ids
+    result.attrs["unmapped_sellers"]=unmapped_sellers
+    result.attrs["mapped_sellers_without_history"]=mapped_sellers_without_history
     return result
 
 def _apply_principal_breakdown_to_raw(raw_frame, allocations):
@@ -3297,7 +3371,7 @@ if df is None:
 if main_section=="Breakdown Target":
     st.markdown("<div class='score-heading'>◇ BREAKDOWN TARGET</div>",unsafe_allow_html=True)
     st.markdown("### Breakdown Target · Input Principal lalu File Mentah")
-    st.caption("Tahap 1: input target per Principal ID. Target dibagi ke Sales Person Title berdasarkan kontribusi Sales Value Gross tiga bulan, lalu dibagi ke Channel Outlet Group memakai kontribusi yang sama. Sesuaikan ADJUST_TARGET. Tahap 2: unggah file mentah untuk mengisi TARGET_CABANG dan ekspor.")
+    st.caption("Tahap 1: input target per Principal ID. Target dibagi ke Sales Person Title berdasarkan kontribusi Sales Value Gross tiga bulan. Channel tiap posisi dibatasi oleh mapping aktif BISNIS + POSITION_CODE + SALES_CHANNEL, lalu target dibagi di antara channel yang diizinkan berdasarkan kontribusi historis tiga bulan. Sesuaikan ADJUST_TARGET. Tahap 2: unggah file mentah untuk mengisi TARGET_CABANG dan ekspor.")
     _bt_tabs=st.tabs(["1 · Breakdown Principal", "2 · File Mentah Target"])
     with _bt_tabs[0]:
         _bt_controls=st.columns(4,gap="medium")
@@ -3309,9 +3383,49 @@ if main_section=="Breakdown Target":
         _bt_selected_bg=_bt_controls[2].selectbox("Business Group",_bt_bg_options,key="breakdown_target_business_group") if _bt_bg_options else ""
         _bt_controls[3].markdown(f"<div class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(ACTIVE_BRANCH_NAME)} · {html.escape(ACTIVE_BRANCH_CODE)}</div>",unsafe_allow_html=True)
         _bt_scope=df[df[_bt_bg_col].astype(str).str.strip().eq(_bt_selected_bg)].copy() if _bt_bg_col and _bt_selected_bg else df
+        _bt_mapping_upload=st.file_uploader(
+            "Unggah file mapping assignment (.xlsx)",
+            type=["xlsx"],
+            key="bt_channel_mapping_upload",
+            help="Mapping memakai BRANCH_CODE, ISACTIVE, BISNIS, POSITION_CODE (Sales Person Title), dan SALES_CHANNEL (Channel Outlet Group).",
+        )
+        _bt_channel_mapping=None
+        _bt_mapping_fingerprint=None
+        if _bt_mapping_upload is not None:
+            _bt_mapping_bytes=_bt_mapping_upload.getvalue()
+            _bt_mapping_fingerprint=hashlib.sha256(_bt_mapping_bytes).hexdigest()
+            try:
+                _bt_channel_mapping=_read_channel_assignment_map(_bt_mapping_bytes,ACTIVE_BRANCH_CODE)
+                _bt_group_key=key(_bt_selected_bg).casefold()
+                _bt_group_mapping={
+                    position:channels
+                    for (business,position),channels in _bt_channel_mapping.items()
+                    if business==_bt_group_key
+                }
+                if not _bt_group_mapping:
+                    _bt_channel_mapping=None
+                    st.error(f"Tidak ada mapping channel aktif untuk Business Group {_bt_selected_bg} di cabang {ACTIVE_BRANCH_CODE}.")
+                else:
+                    _bt_mapped_channel_count=sum(len(channels) for channels in _bt_group_mapping.values())
+                    st.success(
+                        f"Mapping aktif {ACTIVE_BRANCH_CODE} · {_bt_selected_bg}: "
+                        f"{len(_bt_group_mapping):,} Sales Person Title dan "
+                        f"{_bt_mapped_channel_count:,} pasangan channel."
+                    )
+            except Exception as _bt_mapping_error:
+                st.error(f"File mapping assignment gagal dibaca: {_bt_mapping_error}")
+        else:
+            st.info("Unggah file mapping assignment sebelum membuat breakdown. Hanya assignment aktif untuk cabang dan Business Group terpilih yang digunakan.")
+        _bt_current_mapping_signature=(
+            _bt_mapping_fingerprint,
+            ACTIVE_BRANCH_CODE,
+            key(_bt_selected_bg).casefold(),
+        )
         _bt_pid_col=col(_bt_scope,"principal"); _bt_name_col=col(_bt_scope,"principal_name")
+        _bt_allocations_stale=False
         if not _bt_pid_col:
             st.error("Database tidak memiliki Principal ID.")
+            _bt_allocations_stale=True
         else:
             _bt_principals=pd.DataFrame({"PRINCIPLE ID":sorted(_bt_scope[_bt_pid_col].dropna().astype(str).str.strip().unique())})
             _bt_principals["PRINCIPAL_NAME"]=_bt_principals["PRINCIPLE ID"] if not _bt_name_col else _bt_principals["PRINCIPLE ID"].map(_bt_scope.dropna(subset=[_bt_name_col]).drop_duplicates(_bt_pid_col).set_index(_bt_pid_col)[_bt_name_col].astype(str).to_dict()).fillna(_bt_principals["PRINCIPLE ID"])
@@ -3358,25 +3472,47 @@ if main_section=="Breakdown Target":
             st.caption("Target hasil breakdown dibulatkan ke bilangan utuh. Selisih pembulatan dibagikan agar total tetap sama.")
             if st.button("Buat breakdown per Sales Person dan Channel",key="bt_generate_allocations",type="primary"):
                 try:
-                    st.session_state["_bt_allocations"]=_prepare_principal_channel_breakdown(_bt_scope,int(_bt_year),int(_bt_month),_bt_targets,_bt_basis,_bt_selected_bg)
+                    st.session_state["_bt_allocations"]=_prepare_principal_channel_breakdown(
+                        _bt_scope,int(_bt_year),int(_bt_month),_bt_targets,_bt_basis,_bt_selected_bg,
+                        channel_mapping=_bt_channel_mapping,
+                    )
                     st.session_state["_bt_fallback_ids"]=list(st.session_state["_bt_allocations"].attrs.get("fallback_ids",[]))
                     st.session_state["_bt_generated_target_signature"]=_bt_current_target_signature
+                    st.session_state["_bt_generated_mapping_signature"]=_bt_current_mapping_signature
                     st.session_state["_bt_seller_adjustments"]={}
                     st.session_state.pop("bt_seller_summary_adjust",None)
                     st.session_state.pop("bt_adjust_allocations",None)
                     _bt_skipped_history=st.session_state["_bt_allocations"].attrs.get("skipped_no_history",[])
                     _bt_skipped_weight=st.session_state["_bt_allocations"].attrs.get("skipped_no_weight",[])
+                    _bt_unmapped_sellers=st.session_state["_bt_allocations"].attrs.get("unmapped_sellers",[])
+                    _bt_mapped_without_history=st.session_state["_bt_allocations"].attrs.get("mapped_sellers_without_history",[])
                     st.success("Breakdown siap disesuaikan.")
+                    if _bt_unmapped_sellers:
+                        st.warning(
+                            f"{len(_bt_unmapped_sellers):,} Sales Person Title tanpa mapping aktif tidak dialokasikan; "
+                            f"target dibagi ulang ke posisi yang memiliki mapping: "
+                            f"{', '.join(_bt_unmapped_sellers[:20])}{'…' if len(_bt_unmapped_sellers)>20 else ''}."
+                        )
+                    if _bt_mapped_without_history:
+                        st.info(
+                            f"{len(_bt_mapped_without_history):,} POSITION_CODE pada mapping tidak ditemukan "
+                            f"di riwayat tiga bulan sehingga belum menerima alokasi: "
+                            f"{', '.join(_bt_mapped_without_history[:20])}{'…' if len(_bt_mapped_without_history)>20 else ''}."
+                        )
                     if _bt_skipped_history or _bt_skipped_weight:
                         _bt_skipped_ids=sorted(set(_bt_skipped_history+_bt_skipped_weight))
                         st.warning(f"{len(_bt_skipped_ids):,} Principal ID dilewati karena tidak memiliki riwayat atau bobot 3 bulan: {', '.join(_bt_skipped_ids[:20])}{'…' if len(_bt_skipped_ids)>20 else ''}. Principal lain tetap diproses.")
                 except Exception as _bt_err:
                     st.session_state.pop("_bt_allocations",None)
                     st.session_state.pop("_bt_generated_target_signature",None)
+                    st.session_state.pop("_bt_generated_mapping_signature",None)
                     st.error(f"Breakdown gagal: {_bt_err}")
-            _bt_allocations_stale=st.session_state.get("_bt_allocations") is not None and st.session_state.get("_bt_generated_target_signature")!=_bt_current_target_signature
+            _bt_allocations_stale=st.session_state.get("_bt_allocations") is not None and (
+                st.session_state.get("_bt_generated_target_signature")!=_bt_current_target_signature
+                or st.session_state.get("_bt_generated_mapping_signature")!=_bt_current_mapping_signature
+            )
             if _bt_allocations_stale:
-                st.warning("Target Principal ID berubah setelah breakdown dibuat. Klik ‘Buat breakdown per Sales Person dan Channel’ untuk memperbarui hasil.")
+                st.warning("Target Principal ID atau file mapping/cabang/Business Group berubah setelah breakdown dibuat. Klik ‘Buat breakdown per Sales Person dan Channel’ untuk memperbarui hasil.")
             if st.session_state.get("_bt_allocations") is not None and not _bt_allocations_stale:
                 _bt_alloc=st.session_state["_bt_allocations"].copy()
                 _bt_alloc=_bt_alloc.drop(columns=["ADJUST_TARGET_SALESPERSON"],errors="ignore")
@@ -3445,7 +3581,9 @@ if main_section=="Breakdown Target":
     with _bt_tabs[1]:
         _bt_raw_upload=st.file_uploader("Unggah file mentah target (.xlsx)",type=["xlsx"],key="bt_raw_target_upload",help="TARGET_CABANG akan diisi dari breakdown tahap 1, dicocokkan menurut Sales Person Title, Principal ID, dan Channel Outlet Group.")
         st.caption("TARGET_REKOMENDASI_HO tetap dari template. Hanya TARGET_CABANG yang berubah; total harus sama per periode, bisnis, ITEM_SUBLINI, Principal ID, dan SUBLINI_PRODUCT. Nol di depan ITEM_SUBLINI dipertahankan.")
-        if st.session_state.get("_bt_allocations") is None or st.session_state["_bt_allocations"].empty:
+        if _bt_allocations_stale:
+            st.info("Hasil breakdown belum sesuai dengan target atau mapping aktif. Perbarui breakdown di tab 1 terlebih dahulu.")
+        elif st.session_state.get("_bt_allocations") is None or st.session_state["_bt_allocations"].empty:
             st.info("Selesaikan breakdown tahap 1 terlebih dahulu.")
         elif _bt_raw_upload is not None:
             try:
