@@ -2753,7 +2753,7 @@ if main_section=="Program Push":
     for _prog in PROGRAMS:
         _pkey = key(_prog).replace(" ","_")
         _month_val = _cfg_save[_prog].get("calculation_month", _active_push_month) or _active_push_month
-        st.session_state[f"filter_month_{_pkey}"] = [_month_val]
+        st.session_state[f"filter_month_{_pkey}"] = [] if _month_val == "All" else [_month_val]
         _pid_val  = _cfg_save[_prog].get("principal","All") or "All"
         st.session_state[f"filter_principal_{_pkey}"] = [] if _pid_val=="All" else [_pid_val]
         _pc_val   = _cfg_save[_prog].get("product_code","All") or "All"
