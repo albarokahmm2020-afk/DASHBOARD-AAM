@@ -3850,7 +3850,7 @@ if main_section=="Program Push" and "_active_push_month" in dir():
                     key=_year_key)
             _c9,_c10 = st.columns([1,1], gap="small")
             with _c9:
-                _month_opts2 = _tab_months_cfg
+                _month_opts2 = ["All"] + _tab_months_cfg
                 _scalc_month = _prog_cfg2(_p,"calculation_month",_active_push_month) or _active_push_month
                 if _scalc_month not in _month_opts2: _scalc_month = _active_push_month
                 _calc_month_key=f"pbm2_calc_month_{_active_push_month}_{key(_p).replace(' ','_')}"
@@ -3858,7 +3858,7 @@ if main_section=="Program Push" and "_active_push_month" in dir():
                 _ncalc_month = st.selectbox("Bulan Transaksi",_month_opts2,
                     index=_month_opts2.index(_scalc_month),key=_calc_month_key)
             _weekly_target_params={"year":[] if _nyear=="All" else [_nyear],
-                                   "month":[_ncalc_month],
+                                   "month":[] if _ncalc_month=="All" else [_ncalc_month],
                                    "principal":[] if _np=="All" else [_np],
                                    "channel_group":[] if _nchannel=="All" else [_nchannel],
                                    "business_group":[] if _nbusiness_group=="All" else [_nbusiness_group],
@@ -4009,7 +4009,8 @@ if main_section=="Program Push" and "_active_push_month" in dir():
             # Update session_state filter langsung; names remain scoped to this month's config.
             for _prog in PROGRAMS:
                 _pkey2 = key(_prog).replace(" ","_")
-                st.session_state[f"filter_month_{_pkey2}"]=[_cfg_new[_prog]["calculation_month"]]
+                _configured_month=_cfg_new[_prog]["calculation_month"]
+                st.session_state[f"filter_month_{_pkey2}"]=[] if _configured_month=="All" else [_configured_month]
                 _pv=_cfg_new[_prog]["principal"];    st.session_state[f"filter_principal_{_pkey2}"]=[] if _pv=="All" else [_pv]
                 _cv=_cfg_new[_prog]["product_code"]; st.session_state[f"filter_product_code_{_pkey2}"]=[] if _cv=="All" else [_cv]
                 _rv=_cfg_new[_prog]["product"];      st.session_state[f"filter_product_{_pkey2}"]=[] if _rv=="All" else [_rv]
@@ -4090,7 +4091,7 @@ def apply_active_program_config(program, selected, config_month=None):
     selected["year"] = [] if year_value == "All" else [year_value]
     selected["principal_name"] = []
     calculation_month = cfg.get("calculation_month", active_month) or active_month
-    selected["month"] = [calculation_month]
+    selected["month"] = [] if calculation_month == "All" else [calculation_month]
     for kind in ("principal", "product_code", "product"):
         value = cfg.get(kind, PROGRAM_FILTER_DEFAULTS.get(program, {}).get(kind, "All")) or "All"
         selected[kind] = [] if value == "All" else [value]
