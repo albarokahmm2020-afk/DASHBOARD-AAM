@@ -868,10 +868,9 @@ ASSET_DIR=APP_DIR/"assets"
 if not ASSET_DIR.exists():
     ASSET_DIR=APP_DIR
 BRANCH_OPTIONS={"BDG":"Bandung","PTK":"Pontianak","MDN":"Medan"}
-# Shared Drive folder provided for database access. Operational writes use
-# isolated Dashboard_Data and Dashboard_Exports subfolders beneath this root.
+# Database source and operational storage use separate Drive folders.
 DEFAULT_DRIVE_DATABASE_FOLDER_ID="1Ef0DsWdqJ-fy7ahuQ0NR3H1dO2QkHk4b"
-DEFAULT_DRIVE_STORAGE_FOLDER_ID=DEFAULT_DRIVE_DATABASE_FOLDER_ID
+DEFAULT_DRIVE_STORAGE_FOLDER_ID="1PbFpy3eKv3K_b08EnURVx4vFNULFE4Tt"
 LEGACY_DEFAULT_DRIVE_STORAGE_FOLDER_ID="1E88RgFi_zTHzsJZzD0RVztdcS5Wecc6e"
 def _drive_service_credentials():
     """Build credentials with write access limited by the service account's Drive sharing."""
@@ -900,21 +899,15 @@ def _drive_folder_id(folder_name, parent_id):
     return response.json()["id"]
 
 def _drive_storage_folder(category, branch=None):
-    """Return/create a folder under an accessible, writable Google Drive folder."""
+    """Return/create a folder under the configured operational storage folder."""
     from google.auth.transport.requests import AuthorizedSession
     drive_settings=st.secrets.get("google_drive",{})
     configured_root=drive_settings.get("storage_folder_id")
-    # Migrate the previous built-in destination if it was copied into Cloud
-    # Secrets. An explicit newer destination still takes precedence.
-    if configured_root is None or str(configured_root).strip()==LEGACY_DEFAULT_DRIVE_STORAGE_FOLDER_ID:
+    configured_root=str(configured_root or "").strip()
+    # Keep a deliberately configured storage folder; otherwise use the folder
+    # supplied for operational files, not the separate database source folder.
+    if not configured_root or configured_root==LEGACY_DEFAULT_DRIVE_STORAGE_FOLDER_ID:
         configured_root=DEFAULT_DRIVE_STORAGE_FOLDER_ID
-    root_candidates=[]
-    for candidate in (configured_root,drive_settings.get("database_folder_id"),DEFAULT_DRIVE_STORAGE_FOLDER_ID):
-        candidate=str(candidate or "").strip()
-        if candidate and candidate not in root_candidates and candidate!=LEGACY_DEFAULT_DRIVE_STORAGE_FOLDER_ID:
-            root_candidates.append(candidate)
-    if not root_candidates:
-        raise RuntimeError("Folder penyimpanan Google Drive belum dikonfigurasi. Atur [google_drive].storage_folder_id ke ID folder dashboard.")
     session=AuthorizedSession(_drive_service_credentials())
     def accessible_folder(folder_id):
         response=session.get(
@@ -928,19 +921,14 @@ def _drive_storage_folder(category, branch=None):
         item=response.json()
         return item if item.get("mimeType")=="application/vnd.google-apps.folder" else None
 
-    root=None; root_id=None; readable_folder=False
-    for candidate in root_candidates:
-        candidate_root=accessible_folder(candidate)
-        if candidate_root is None:
-            continue
-        readable_folder=True
-        if candidate_root.get("capabilities",{}).get("canAddChildren") is False:
-            continue
-        root_id=candidate; root=candidate_root; break
+    root=accessible_folder(configured_root)
     if root is None:
-        if readable_folder:
-            raise RuntimeError("Akun layanan dapat melihat folder Google Drive, tetapi tidak dapat membuat subfolder di sana. Berikan akses Editor pada folder storage_folder_id atau database_folder_id.")
-        raise RuntimeError("Folder penyimpanan Google Drive tidak dapat diakses sebagai folder. Periksa storage_folder_id/database_folder_id dan pastikan folder dibagikan kepada akun layanan dashboard.")
+        raise RuntimeError("Folder penyimpanan operasional Google Drive tidak dapat diakses. Pastikan ID folder benar dan folder dibagikan kepada akun layanan.")
+    if root.get("capabilities",{}).get("canAddChildren") is False:
+        raise RuntimeError("Akun layanan Google Drive hanya dapat membaca folder penyimpanan. Berikan akses Editor pada folder tersebut.")
+    root_id=configured_root
+    if category=="settings":
+        return root_id
     folder_id=_drive_folder_id("Dashboard_Data" if category!="exports" else "Dashboard_Exports",root_id)
     if branch:
         folder_id=_drive_folder_id(str(branch),folder_id)
@@ -1100,6 +1088,7 @@ if "active_branch_code" not in st.session_state:
     st.session_state["active_branch_code"]="BDG"
 _branch_choice=st.session_state.get("active_branch_code","BDG")
 ACTIVE_BRANCH_CODE=_branch_choice
+SETTINGS_DRIVE_FILE_NAME=f"dashboard_settings_{ACTIVE_BRANCH_CODE}.json"
 ACTIVE_BRANCH_NAME=BRANCH_OPTIONS[ACTIVE_BRANCH_CODE]
 UI_ACCENT={"BDG":"#20B2AA","PTK":"#6366F1","MDN":"#28A745"}[ACTIVE_BRANCH_CODE]
 UI_HEADER_TINT={"BDG":"#E8F7F6","PTK":"#EEF0FF","MDN":"#FBF1E3"}[ACTIVE_BRANCH_CODE]
@@ -1141,7 +1130,7 @@ def _restore_drive_state():
         st.session_state["_drive_state_restored_branch"]=ACTIVE_BRANCH_CODE
         return
     files=[
-        (SETTINGS_PATH,"dashboard_settings.json","settings"),
+        (SETTINGS_PATH,SETTINGS_DRIVE_FILE_NAME,"settings"),
         (OVERVIEW_DATA_DIR/"overview_calendar.xlsx","overview_calendar.xlsx","overview"),
         (OVERVIEW_DATA_DIR/"overview_fixed_call.xlsx","overview_fixed_call.xlsx","overview"),
     ]
@@ -1191,13 +1180,15 @@ def save_settings(settings,notify=False):
             st.session_state["_settings_sync_error"]=message
             if notify: st.session_state["_settings_sync_notice"]="warning"
             return False
-        _drive_upload_bytes(SETTINGS_PATH.name,payload,"application/json","settings",ACTIVE_BRANCH_CODE)
+        drive_folder_id=_drive_storage_folder("settings",ACTIVE_BRANCH_CODE)
+        _drive_upload_bytes(SETTINGS_DRIVE_FILE_NAME,payload,"application/json","settings",ACTIVE_BRANCH_CODE)
     except Exception as exc:
         message=f"Konfigurasi tersimpan lokal, tetapi gagal disinkronkan ke Google Drive: {exc}"
         st.session_state["_settings_sync_error"]=message
         if notify: st.session_state["_settings_sync_notice"]="error"
         return False
     st.session_state.pop("_settings_sync_error",None)
+    st.session_state["_settings_drive_folder_id"]=drive_folder_id
     if notify: st.session_state["_settings_sync_notice"]="success"
     return True
 settings=load_settings()
@@ -1205,6 +1196,9 @@ _settings_sync_error=st.session_state.get("_settings_sync_error")
 _settings_sync_notice=st.session_state.pop("_settings_sync_notice",None)
 if _settings_sync_notice=="success":
     st.success("Konfigurasi berhasil disimpan dan disinkronkan ke Google Drive.")
+    _settings_drive_folder_id=st.session_state.get("_settings_drive_folder_id")
+    if _settings_drive_folder_id:
+        st.markdown(f"[Buka folder Google Drive tempat konfigurasi tersimpan](https://drive.google.com/drive/folders/{_settings_drive_folder_id})")
 elif _settings_sync_notice=="warning":
     st.warning(st.session_state.get("_settings_sync_error","Konfigurasi hanya tersimpan secara lokal."))
 elif _settings_sync_notice=="error":
@@ -3764,6 +3758,7 @@ if main_section=="Program Push" and "_active_push_month" in dir():
     with st.expander(f"⚙️ Konfigurasi Program · {_active_push_month}", expanded=False):
         st.caption("Pilih bulan transaksi, tahun, metric, dan filter masing-masing program untuk perhitungan Summary.")
         st.caption("Perubahan konfigurasi tersimpan otomatis dan akan dipulihkan saat dashboard dibuka kembali.")
+        st.caption("Konfigurasi tersimpan di folder Google Drive operasional untuk cabang aktif, terpisah dari folder sumber database.")
         st.markdown("**Tambah Program Push untuk bulan ini**")
         with st.form(f"add_program_push_{key(_active_push_month).replace(' ','_')}",clear_on_submit=True):
             _new_program_name=st.text_input("Nama program baru",max_chars=70,placeholder="Contoh: PB PROGRAM BARU")
