@@ -1988,6 +1988,12 @@ def matches_dimension(series,kind,value):
     normalized=series.astype(str).map(month_label) if kind=="month" else series.astype(str)
     expected=[month_label(v) if kind=="month" else str(v) for v in values]
     return normalized.isin(expected)
+def configured_months(value):
+    """Return configured transaction months, with an empty list representing All."""
+    if value is None or value == "All" or value == "":
+        return []
+    values=value if isinstance(value,(list,tuple,set)) else [value]
+    return [str(month) for month in values if month not in (None,"","All")]
 def target_filtered(t, params, metric, require_explicit=()):
     if t is None or t.empty: return None, pd.DataFrame()
     tc={k:col(t,k) for k in ["year","month","principal_name","principal","channel_group","business_group","product_code","product","salesperson","program"]}
@@ -2753,7 +2759,7 @@ if main_section=="Program Push":
     for _prog in PROGRAMS:
         _pkey = key(_prog).replace(" ","_")
         _month_val = _cfg_save[_prog].get("calculation_month", _active_push_month) or _active_push_month
-        st.session_state[f"filter_month_{_pkey}"] = [] if _month_val == "All" else [_month_val]
+        st.session_state[f"filter_month_{_pkey}"] = configured_months(_month_val)
         _pid_val  = _cfg_save[_prog].get("principal","All") or "All"
         st.session_state[f"filter_principal_{_pkey}"] = [] if _pid_val=="All" else [_pid_val]
         _pc_val   = _cfg_save[_prog].get("product_code","All") or "All"
@@ -3736,6 +3742,19 @@ if main_section=="Program Push" and "_active_push_month" in dir():
             st.session_state[widget_key] = value
             st.session_state[source_key] = value
 
+    def _normalize_month_widget(widget_key):
+        selected_months=list(st.session_state.get(widget_key,[]))
+        previous_months=set(st.session_state.get(f"{widget_key}__previous",[]))
+        added_months=set(selected_months)-previous_months
+        if "All" in added_months:
+            selected_months=["All"]
+        elif "All" in selected_months and added_months:
+            selected_months=[month for month in selected_months if month!="All"]
+        if not selected_months:
+            selected_months=["All"]
+        st.session_state[widget_key]=selected_months
+        st.session_state[f"{widget_key}__previous"]=selected_months
+
     with st.expander(f"⚙️ Konfigurasi Program · {_active_push_month}", expanded=False):
         st.caption("Pilih bulan transaksi, tahun, metric, dan filter masing-masing program untuk perhitungan Summary.")
         st.caption("Perubahan konfigurasi tersimpan otomatis dan akan dipulihkan saat dashboard dibuka kembali.")
@@ -3851,14 +3870,24 @@ if main_section=="Program Push" and "_active_push_month" in dir():
             _c9,_c10 = st.columns([1,1], gap="small")
             with _c9:
                 _month_opts2 = ["All"] + _tab_months_cfg
-                _scalc_month = _prog_cfg2(_p,"calculation_month",_active_push_month) or _active_push_month
-                if _scalc_month not in _month_opts2: _scalc_month = _active_push_month
+                _saved_calc_month = _prog_cfg2(_p,"calculation_month",_active_push_month) or _active_push_month
+                _scalc_month = configured_months(_saved_calc_month)
+                _scalc_month = [month for month in _scalc_month if month in _tab_months_cfg]
+                if not _scalc_month:
+                    _scalc_month = ["All"] if _saved_calc_month == "All" else [_active_push_month]
                 _calc_month_key=f"pbm2_calc_month_{_active_push_month}_{key(_p).replace(' ','_')}"
+                _month_source_key=f"{_calc_month_key}__config_source"
+                if st.session_state.get(_month_source_key) != _scalc_month:
+                    st.session_state[f"{_calc_month_key}__previous"] = list(_scalc_month)
                 _sync_config_widget(_calc_month_key,_scalc_month)
-                _ncalc_month = st.selectbox("Bulan Transaksi",_month_opts2,
-                    index=_month_opts2.index(_scalc_month),key=_calc_month_key)
+                st.session_state.setdefault(f"{_calc_month_key}__previous",list(_scalc_month))
+                _ncalc_month = st.multiselect(
+                    "Bulan Transaksi",_month_opts2,key=_calc_month_key,
+                    on_change=_normalize_month_widget,args=(_calc_month_key,),
+                    help="Pilih satu atau beberapa bulan. Pilih All untuk mencakup semua bulan."
+                )
             _weekly_target_params={"year":[] if _nyear=="All" else [_nyear],
-                                   "month":[] if _ncalc_month=="All" else [_ncalc_month],
+                                   "month":configured_months(_ncalc_month),
                                    "principal":[] if _np=="All" else [_np],
                                    "channel_group":[] if _nchannel=="All" else [_nchannel],
                                    "business_group":[] if _nbusiness_group=="All" else [_nbusiness_group],
@@ -3977,7 +4006,7 @@ if main_section=="Program Push" and "_active_push_month" in dir():
                             "principal":_np,"product_code":_npc,"product":_nprod,
                             "channel_group":_nchannel,"business_group":_nbusiness_group,
                             "metric":_nmetric,"year":_nyear,
-                            "calculation_month":_ncalc_month,
+                            "calculation_month":"All" if "All" in _ncalc_month else list(_ncalc_month),
                             "weekly_target":float(_nweekly_target),
                             "weekly_target_percent":float(_nweekly_target_percent),
                             "weekly_week":int(_nweekly_week),
@@ -4010,7 +4039,7 @@ if main_section=="Program Push" and "_active_push_month" in dir():
             for _prog in PROGRAMS:
                 _pkey2 = key(_prog).replace(" ","_")
                 _configured_month=_cfg_new[_prog]["calculation_month"]
-                st.session_state[f"filter_month_{_pkey2}"]=[] if _configured_month=="All" else [_configured_month]
+                st.session_state[f"filter_month_{_pkey2}"]=configured_months(_configured_month)
                 _pv=_cfg_new[_prog]["principal"];    st.session_state[f"filter_principal_{_pkey2}"]=[] if _pv=="All" else [_pv]
                 _cv=_cfg_new[_prog]["product_code"]; st.session_state[f"filter_product_code_{_pkey2}"]=[] if _cv=="All" else [_cv]
                 _rv=_cfg_new[_prog]["product"];      st.session_state[f"filter_product_{_pkey2}"]=[] if _rv=="All" else [_rv]
@@ -4091,7 +4120,7 @@ def apply_active_program_config(program, selected, config_month=None):
     selected["year"] = [] if year_value == "All" else [year_value]
     selected["principal_name"] = []
     calculation_month = cfg.get("calculation_month", active_month) or active_month
-    selected["month"] = [] if calculation_month == "All" else [calculation_month]
+    selected["month"] = configured_months(calculation_month)
     for kind in ("principal", "product_code", "product"):
         value = cfg.get(kind, PROGRAM_FILTER_DEFAULTS.get(program, {}).get(kind, "All")) or "All"
         selected[kind] = [] if value == "All" else [value]
