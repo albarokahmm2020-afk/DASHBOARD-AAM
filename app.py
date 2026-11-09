@@ -12,6 +12,36 @@ import requests
 import streamlit as st
 import altair as alt
 
+def _style_dashboard_chart(chart):
+    return (
+        chart
+        .configure(background="#FFFFFF")
+        .configure_view(fill="#FFFFFF", stroke="#E2E8F0", strokeWidth=1)
+        .configure_axis(
+            labelFont="sans-serif",
+            titleFont="sans-serif",
+            labelFontSize=11,
+            titleFontSize=11,
+            labelColor="#526176",
+            titleColor="#334155",
+            domainColor="#CBD5E1",
+            tickColor="#CBD5E1",
+            grid=True,
+            gridColor="#E8EDF3",
+            gridDash=[3, 4],
+            titlePadding=8,
+        )
+        .configure_legend(
+            labelFont="sans-serif",
+            titleFont="sans-serif",
+            labelFontSize=11,
+            labelColor="#46566B",
+            titleColor="#334155",
+            symbolSize=130,
+            padding=8,
+        )
+    )
+
 st.session_state["_drive_copy_button_counter"] = 0
 
 _streamlit_dataframe = st._main.dataframe
@@ -2587,7 +2617,7 @@ div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal']
 .scorecard {{ border:1px solid #D8E0EA !important; border-top:3px solid {UI_ACCENT} !important; border-radius:11px !important; box-shadow:0 2px 8px rgba(15,23,42,.05) !important; }}
 .scorecard:hover {{ transform:none !important; border-color:#B8C6D9 !important; box-shadow:0 4px 12px rgba(15,23,42,.08) !important; }}
 .stDataFrame,.stDataEditor {{ border-radius:9px !important; }}
-div[data-testid='stVegaLiteChart'] {{ border:1px solid #E2E8F0; border-radius:10px; padding:6px; background:#FFFFFF !important; }}
+div[data-testid='stVegaLiteChart'] {{ border:1px solid #D8E0EA; border-radius:12px; padding:8px; background:#FFFFFF !important; box-shadow:0 2px 8px rgba(15,23,42,.045); }}
 .monitoring-sales-card,.monitoring-sales-fot,.scorecard,div[data-testid='stMetric'] {{ transition:background-color .18s ease,border-color .18s ease,box-shadow .18s ease !important; }}
 .monitoring-sales-card:hover,.monitoring-sales-fot:hover,.scorecard:hover,div[data-testid='stMetric']:hover {{ transform:none !important; border-color:#B8C6D9 !important; box-shadow:0 4px 12px rgba(15,23,42,.08) !important; }}
 button[kind='primary']:hover,button[kind='secondary']:hover {{ transform:none !important; }}
@@ -6621,22 +6651,22 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
             with chart_header: st.markdown("#### Tren Penjualan Cabang · Actual vs Target")
             with fot_box:
                 st.markdown(f"<div class='monitoring-sales-fot'>FOT {int(selected_year)}<br><strong>{fot}×</strong></div>",unsafe_allow_html=True)
-            bars=alt.Chart(trend).transform_fold(["Sales","Target"],as_=["Jenis","Nilai"]).mark_bar(size=25,opacity=.92).encode(
+            bars=alt.Chart(trend).transform_fold(["Sales","Target"],as_=["Jenis","Nilai"]).mark_bar(size=22,cornerRadiusTopLeft=3,cornerRadiusTopRight=3,opacity=.95).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist(),axis=alt.Axis(title="BULAN",labelAngle=-30,labelPadding=7)),
                 xOffset=alt.XOffset("Jenis:N"),y=alt.Y("Nilai:Q",title="Sales Value Gross / Target",scale=alt.Scale(domainMin=0),axis=alt.Axis(format="~s",titlePadding=10)),
                 tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("Jenis:N",title="Metrik"),alt.Tooltip("Nilai:Q",title="Nominal",format=",.0f")],
-                color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#335A9F","#AAB8CC"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)))
+                color=alt.Color("Jenis:N",scale=alt.Scale(domain=["Sales","Target"],range=["#3B82F6","#A8B5C7"]),legend=alt.Legend(orient="top",direction="horizontal",title=None,offset=4)))
             _bars_chart=bars.properties(width="container")
             _at_data=trend.dropna(subset=["A/T %"])
             _at_max=float(_at_data["A/T %"].max()) if not _at_data.empty else 120
             _at_axis=max(120,math.ceil(_at_max/20)*20)
             _at_rule=alt.Chart(pd.DataFrame({"A/T %": [100]})).mark_rule(color="#E69B24",strokeDash=[5,4],strokeWidth=2).encode(y=alt.Y("A/T %:Q",axis=None))
-            _at_line=alt.Chart(_at_data).mark_line(color="#0F9B8E",strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=72)).encode(
+            _at_line=alt.Chart(_at_data).mark_line(color="#14B8A6",strokeWidth=3,point=alt.OverlayMarkDef(filled=True,size=72,stroke="#FFFFFF",strokeWidth=2)).encode(
                 x=alt.X("Month:N",sort=trend["Month"].tolist(),axis=alt.Axis(title=None,labelAngle=0,labelPadding=5)),
                 y=alt.Y("A/T %:Q",title="Pencapaian A/T",scale=alt.Scale(domain=[0,_at_axis]),axis=alt.Axis(format=".0f",labelExpr="datum.value + '%'",orient="right",tickCount=5,titlePadding=10)),
                 tooltip=[alt.Tooltip("Month:N",title="Bulan"),alt.Tooltip("A/T %:Q",title="A/T",format=".1f")])
             _at_chart=alt.layer(_at_rule,_at_line).resolve_scale(y="shared")
-            _trend_chart=alt.layer(_bars_chart,_at_chart).resolve_scale(x="shared",y="independent").properties(height=340,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0",strokeWidth=1).configure_axis(labelFontSize=11,titleFontSize=11,labelColor="#526176",titleColor="#3E4D62",domainColor="#CBD4DF",tickColor="#CBD4DF",grid=True,gridColor="#E8EDF3",gridDash=[3,4],titlePadding=7).configure_legend(labelFontSize=11,labelColor="#46566B",symbolSize=130,padding=6)
+            _trend_chart=_style_dashboard_chart(alt.layer(_bars_chart,_at_chart).resolve_scale(x="shared",y="independent").properties(height=340,width="container"))
             st.altair_chart(_trend_chart,width="stretch",key=f"performance_trend_{abs(hash(_perf_filter_signature))}")
             st.caption("Batang menunjukkan Sales Value dan Target; garis menunjukkan A/T pada sumbu kanan. Garis putus-putus menandai target 100%.")
 
@@ -6682,11 +6712,11 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                         _quad_pid[_display]=_quad_pid[_raw].map(_compact_quadrant_amount)
                     _growth_no_base=int(_quad_pid["Growth Sales %"].isna().sum())
                     _quad_pid=_quad_pid.dropna(subset=["A/T %","Growth Sales %"])
-                    _scatter=alt.Chart(_quad_pid).mark_circle(size=100,opacity=.82,stroke="#FFFFFF",strokeWidth=1).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Growth Sales %:Q",title="Growth Sales · Rerata Bulanan 2025 → 2026 (%)",axis=alt.Axis(format=".0f",labelExpr="datum.value + '%'",tickCount=5)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#0F9B8E"),alt.value("#335A9F")),tooltip=[alt.Tooltip("Principal ID:N",title="Principal ID"),alt.Tooltip("Nama Principal:N",title="Nama Principal"),alt.Tooltip("Average 2025 Ringkas:N",title="Avg sales/bulan 2025"),alt.Tooltip("Average 2026 Ringkas:N",title="Avg sales/bulan 2026"),alt.Tooltip("Growth Sales %:Q",title="Growth sales",format="+.1f"),alt.Tooltip("A/T %:Q",title="A/T",format=".1f"),alt.Tooltip("Actual Ringkas:N",title="Actual bulan terpilih"),alt.Tooltip("Target Ringkas:N",title="Target bulan terpilih"),alt.Tooltip("Gap Ringkas:N",title="Gap bulan terpilih")])
+                    _scatter=alt.Chart(_quad_pid).mark_circle(size=100,opacity=.9,stroke="#FFFFFF",strokeWidth=1.5).encode(x=alt.X("A/T %:Q",title="A/T vs Target (%)",scale=alt.Scale(domainMin=0),axis=alt.Axis(format=".0f")),y=alt.Y("Growth Sales %:Q",title="Growth Sales · Rerata Bulanan 2025 → 2026 (%)",axis=alt.Axis(format=".0f",labelExpr="datum.value + '%'",tickCount=5)),color=alt.condition("datum['A/T %'] >= 100",alt.value("#14B8A6"),alt.value("#6366F1")),tooltip=[alt.Tooltip("Principal ID:N",title="Principal ID"),alt.Tooltip("Nama Principal:N",title="Nama Principal"),alt.Tooltip("Average 2025 Ringkas:N",title="Avg sales/bulan 2025"),alt.Tooltip("Average 2026 Ringkas:N",title="Avg sales/bulan 2026"),alt.Tooltip("Growth Sales %:Q",title="Growth sales",format="+.1f"),alt.Tooltip("A/T %:Q",title="A/T",format=".1f"),alt.Tooltip("Actual Ringkas:N",title="Actual bulan terpilih"),alt.Tooltip("Target Ringkas:N",title="Target bulan terpilih"),alt.Tooltip("Gap Ringkas:N",title="Gap bulan terpilih")])
                     _name_labels=alt.Chart(_quad_pid).mark_text(align="left",dx=7,dy=-7,fontSize=9,color="#526176",limit=105,ellipsis="…").encode(x="A/T %:Q",y="Growth Sales %:Q",text="Principal ID:N")
-                    _vx=alt.Chart(pd.DataFrame({"x":[100]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(x="x:Q")
-                    _hy=alt.Chart(pd.DataFrame({"Growth Sales %":[0]})).mark_rule(color="#9AA9BA",strokeDash=[5,4]).encode(y="Growth Sales %:Q")
-                    _quad_chart=alt.layer(_scatter,_name_labels,_vx,_hy).properties(height=280,width="container").configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3")
+                    _vx=alt.Chart(pd.DataFrame({"x":[100]})).mark_rule(color="#94A3B8",strokeDash=[5,4]).encode(x="x:Q")
+                    _hy=alt.Chart(pd.DataFrame({"Growth Sales %":[0]})).mark_rule(color="#94A3B8",strokeDash=[5,4]).encode(y="Growth Sales %:Q")
+                    _quad_chart=_style_dashboard_chart(alt.layer(_scatter,_name_labels,_vx,_hy).properties(height=280,width="container"))
                     st.altair_chart(_quad_chart,width="stretch",key=f"performance_quadrant_{abs(hash(_perf_filter_signature))}")
                     st.caption(f"Growth = rerata sales bulanan Jan–{MONTHS.get(int(selected_month),str(selected_month))} 2026 dibanding periode sama 2025. Label di titik adalah Principal ID; nama principal dan detail Rb/Jt tersedia saat diarahkan."+(f" {_growth_no_base} principal tanpa sales 2025 tidak bisa dihitung persentase growth-nya." if _growth_no_base else ""))
                 else:
@@ -6795,7 +6825,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                         y=alt.Y("Principal ID:N",sort="-x",title=None),
                         color=alt.Color("Arah:N",scale=alt.Scale(domain=["Di atas target","Di bawah target"],range=["#0F9B8E","#D95D67"]),legend=None),
                         tooltip=["Principal ID",alt.Tooltip("ACT Bulanan:Q",title="Actual",format=",.0f"),alt.Tooltip("TGT Bulanan:Q",title="Target",format=",.0f"),alt.Tooltip("DEV Bulanan:Q",title="Gap",format=",.0f")]).properties(height=max(180,min(300,26*len(_gap_frame))),width="container")
-                    st.altair_chart(_gap_chart.configure(background="#FFFFFF").configure_view(fill="#FFFFFF",stroke="#E2E8F0").configure_axis(labelColor="#526176",titleColor="#3E4D62",gridColor="#E8EDF3"),width="stretch",key=f"performance_gap_{abs(hash(_perf_filter_signature))}")
+                    st.altair_chart(_style_dashboard_chart(_gap_chart),width="stretch",key=f"performance_gap_{abs(hash(_perf_filter_signature))}")
                 else:
                     st.caption("Tidak ada gap principal pada periode terpilih.")
             with _bottom_cols[1]:
@@ -7707,20 +7737,11 @@ elif page=="Summary Program":
                     xOffset=alt.XOffset("Jenis:N"),
                     color=alt.Color(
                         "Jenis:N",
-                        scale=alt.Scale(domain=["Actual","Target"],range=["#0F766E","#64748B"]),
+                        scale=alt.Scale(domain=["Actual","Target"],range=["#3B82F6","#A8B5C7"]),
                         legend=alt.Legend(orient="top",direction="horizontal",title=None),
                     ),
                 ).properties(height=max(220,42*len(_overview_df)))
-                _overview_chart=_overview_chart.configure(
-                    background="#FFFFFF",
-                ).configure_view(
-                    fill="#FFFFFF",stroke="#E2E8F0",
-                ).configure_axis(
-                    labelColor="#526176",titleColor="#3E4D62",
-                    gridColor="#E0E6ED",domainColor="#CBD4DF",
-                ).configure_legend(
-                    labelColor="#46566B",
-                )
+                _overview_chart=_style_dashboard_chart(_overview_chart)
                 st.altair_chart(_overview_chart,width="stretch")
             else:
                 st.info("Grafik Actual vs Target disembunyikan karena program memakai satuan yang berbeda.")
@@ -7744,7 +7765,7 @@ elif page=="Summary Program":
                         "Status:N",
                         scale=alt.Scale(
                             domain=["Rendah","Sedang","Tercapai"],
-                            range=["#B91C1C","#9A4D00","#166534"],
+                            range=["#EF4444","#F59E0B","#10B981"],
                         ),
                         legend=None,
                     ),
@@ -7752,15 +7773,10 @@ elif page=="Summary Program":
                 _target_rule=alt.Chart(pd.DataFrame({"target":[100]})).mark_rule(
                     color="#64748B",strokeDash=[5,4],tooltip=False,
                 ).encode(x=alt.X("target:Q"))
-                _achievement_chart=alt.layer(_achievement_chart,_target_rule).properties(
-                    height=max(220,42*len(_achievement_df)),
-                ).configure(
-                    background="#FFFFFF",
-                ).configure_view(
-                    fill="#FFFFFF",stroke="#E2E8F0",
-                ).configure_axis(
-                    labelColor="#526176",titleColor="#3E4D62",
-                    gridColor="#E0E6ED",domainColor="#CBD4DF",
+                _achievement_chart=_style_dashboard_chart(
+                    alt.layer(_achievement_chart,_target_rule).properties(
+                        height=max(220,42*len(_achievement_df)),
+                    )
                 )
                 st.altair_chart(_achievement_chart,width="stretch")
             else:
