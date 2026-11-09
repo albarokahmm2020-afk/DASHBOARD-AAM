@@ -2184,57 +2184,6 @@ st.markdown("""
 }
 </style>
 """.replace("__BANDUNG_BG__", bandung_bg_data), unsafe_allow_html=True)
-st.markdown("""
-<style>
-@keyframes dashboard-enter {
-  from { opacity: 0; transform: translate3d(0, 18px, 0) scale(.985); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .brand,
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"],
-  section[data-testid="stSidebar"] [data-testid="stElementContainer"] {
-    animation: dashboard-enter .62s cubic-bezier(.22, 1, .36, 1) both;
-  }
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(2) { animation-delay: .05s; }
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(3) { animation-delay: .1s; }
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(4) { animation-delay: .15s; }
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(5) { animation-delay: .2s; }
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:nth-child(n+6) { animation-delay: .25s; }
-  div[data-testid="stMetric"] {
-    transition: transform .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s cubic-bezier(.22, 1, .36, 1), border-color .2s cubic-bezier(.22, 1, .36, 1);
-  }
-  div[data-testid="stMetric"]:hover {
-    transform: translateY(-2px);
-    border-color: #5474B2;
-    box-shadow: 0 12px 24px rgba(0,7,55,.48), inset 0 1px 0 rgba(255,255,255,.16);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
-    transition-duration: .01ms !important;
-  }
-  .brand,
-  .stMainBlockContainer [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"],
-  section[data-testid="stSidebar"] [data-testid="stElementContainer"] {
-    animation: none !important;
-  }
-  .scorecard:hover,
-  .monitoring-sales-card:hover,
-  .monitoring-sales-fot:hover,
-  div[data-testid="stMetric"]:hover,
-  button[kind="primary"]:hover,
-  button[kind="primary"]:active,
-  button[kind="secondary"]:active,
-  div[data-testid='stRadio'] div[role='radiogroup'] label:active {
-    transform: none !important;
-  }
-}
-</style>
-""", unsafe_allow_html=True)
 st.markdown(f"""
 <style>
 :root {{ color-scheme: light; }}
@@ -2452,13 +2401,13 @@ div[data-testid='stMetric'] [data-testid='stMetricValue'] {{
   padding: 14px 15px;
   min-height: 82px;
   box-shadow: 0 2px 8px rgba(15,23,42,.08);
-  transition: transform .2s cubic-bezier(.22, 1, .36, 1), box-shadow .2s cubic-bezier(.22, 1, .36, 1), border-color .2s cubic-bezier(.22, 1, .36, 1);
+  transition: box-shadow .18s ease, border-color .18s ease;
 }}
 .monitoring-sales-card--orange {{ border-top-color: #FF9800; }}
 .monitoring-sales-card:hover {{
-  transform: translateY(-5px);
-  box-shadow: 0 12px 24px rgba(15,23,42,.16);
-  border-color: #CBD5E1;
+  transform: none;
+  box-shadow: 0 4px 12px rgba(15,23,42,.08);
+  border-color: #B8C6D9;
 }}
 .monitoring-sales-card--teal:hover {{ border-top-color: #20B2AA; }}
 .monitoring-sales-card--orange:hover {{ border-top-color: #FF9800; }}
@@ -2630,27 +2579,23 @@ div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal']
 .dashboard-pill--branch {{ background:#EFF6FF; border-color:#BFDBFE; color:#1E40AF; }}
 .dashboard-pill--source {{ background:#F8FAFC; }}
 .monitoring-sales-card,.monitoring-sales-fot {{ border:1px solid #D8E0EA !important; border-top:3px solid {UI_ACCENT} !important; border-radius:10px !important; box-shadow:0 2px 8px rgba(15,23,42,.045) !important; }}
-.monitoring-sales-card:hover,.monitoring-sales-fot:hover {{ transform:translateY(-1px) !important; box-shadow:0 5px 14px rgba(15,23,42,.09) !important; }}
+.monitoring-sales-card:hover,.monitoring-sales-fot:hover {{ transform:none !important; border-color:#B8C6D9 !important; box-shadow:0 4px 12px rgba(15,23,42,.08) !important; }}
 .monitoring-sales-card__label {{ color:#475569 !important; font-size:.72rem !important; letter-spacing:.035em !important; }}
 .monitoring-sales-card__value {{ color:#0F172A !important; font-size:clamp(1.05rem,1.7vw,1.4rem) !important; }}
 .monitoring-sales-fot strong {{ color:{UI_ACCENT} !important; }}
 .score-heading {{ background:#FFFFFF !important; border:1px solid #D8E0EA !important; border-left:4px solid {UI_ACCENT} !important; border-radius:9px !important; box-shadow:none !important; color:#1E293B !important; text-shadow:none !important; padding:11px 14px !important; white-space:normal !important; }}
 .scorecard {{ border:1px solid #D8E0EA !important; border-top:3px solid {UI_ACCENT} !important; border-radius:11px !important; box-shadow:0 2px 8px rgba(15,23,42,.05) !important; }}
-.scorecard:hover {{ transform:translateY(-1px) !important; box-shadow:0 6px 16px rgba(15,23,42,.09) !important; }}
+.scorecard:hover {{ transform:none !important; border-color:#B8C6D9 !important; box-shadow:0 4px 12px rgba(15,23,42,.08) !important; }}
 .stDataFrame,.stDataEditor {{ border-radius:9px !important; }}
 div[data-testid='stVegaLiteChart'] {{ border:1px solid #E2E8F0; border-radius:10px; padding:6px; background:#FFFFFF !important; }}
-@keyframes dashboard-kpi-enter {{ from {{ opacity:0; transform:translateY(9px); }} to {{ opacity:1; transform:translateY(0); }} }}
-@keyframes dashboard-filter-pulse {{ 0% {{ outline:0 solid rgba(32,178,170,0); }} 35% {{ outline:4px solid rgba(32,178,170,.20); }} 100% {{ outline:0 solid rgba(32,178,170,0); }} }}
-@keyframes dashboard-chart-enter {{ from {{ opacity:0; transform:translateY(7px); }} to {{ opacity:1; transform:translateY(0); }} }}
-.monitoring-sales-card,.scorecard,div[data-testid='stMetric'] {{ animation:dashboard-kpi-enter .48s cubic-bezier(.2,.75,.25,1) both; transition:transform .2s ease,box-shadow .2s ease; }}
-.monitoring-sales-card.motion-filter-updated,.scorecard.motion-filter-updated,div[data-testid='stMetric'].motion-filter-updated {{ animation:dashboard-filter-pulse .78s ease-out both; }}
-div[data-testid='stVegaLiteChart'] {{ animation:dashboard-chart-enter .5s cubic-bezier(.2,.75,.25,1) both; }}
-.monitoring-sales-card[style*="--motion-order"] {{ animation-delay:calc(var(--motion-order,0) * 65ms); }}
+.monitoring-sales-card,.monitoring-sales-fot,.scorecard,div[data-testid='stMetric'] {{ transition:background-color .18s ease,border-color .18s ease,box-shadow .18s ease !important; }}
+.monitoring-sales-card:hover,.monitoring-sales-fot:hover,.scorecard:hover,div[data-testid='stMetric']:hover {{ transform:none !important; border-color:#B8C6D9 !important; box-shadow:0 4px 12px rgba(15,23,42,.08) !important; }}
+button[kind='primary']:hover,button[kind='secondary']:hover {{ transform:none !important; }}
 @media(max-width:760px) {{
   div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] {{ flex-wrap:wrap !important; }}
   div[data-testid='stRadio'] div[role='radiogroup'][aria-orientation='horizontal'] label {{ flex:1 1 auto !important; }}
 }}
-@media(prefers-reduced-motion:reduce) {{ .monitoring-sales-card,.monitoring-sales-fot,.scorecard,div[data-testid='stMetric'],div[data-testid='stVegaLiteChart'] {{ animation:none !important; transition:none !important; transform:none !important; }} }}
+@media(prefers-reduced-motion:reduce) {{ .monitoring-sales-card,.monitoring-sales-fot,.scorecard,div[data-testid='stMetric'],div[data-testid='stVegaLiteChart'],button {{ transition:none !important; animation:none !important; transform:none !important; }} }}
 </style>
 """,unsafe_allow_html=True)
 if branch_header_img:
@@ -6501,10 +6446,6 @@ elif main_section=="Performance Sales":
             selected_month=st.selectbox("Month",months,index=months.index(default_month) if default_month in months else max(0,len(months)-1),format_func=lambda m:MONTHS.get(int(m),str(m)),key="performance_month") if months else 1
         settings["performance_filters"]={"business_group":selected_bg,"year":int(selected_year),"month":int(selected_month),"salesperson":selected_sp}
         _perf_filter_signature=(tuple(sorted(map(str,selected_bg))),int(selected_year),int(selected_month),tuple(sorted(map(str,selected_sp))))
-        _perf_previous_filter_signature=st.session_state.get("_performance_last_filter_signature")
-        _perf_filters_changed=_perf_previous_filter_signature is not None and _perf_previous_filter_signature!=_perf_filter_signature
-        st.session_state["_performance_last_filter_signature"]=_perf_filter_signature
-        _perf_motion_class=" motion-filter-updated" if _perf_filters_changed else ""
 
         # ── Scope — semua filter ikut (BG, SP, Year) ─────────────────────────
         # Target Value di database diisi per baris transaksi, di-sum langsung.
@@ -6648,7 +6589,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     display=f"{value:,.1f}%" if label=="A/T" and value is not None else ("—" if value is None else f"{value:,.0f}")
                     accent_class="monitoring-sales-card--orange" if index%2 else "monitoring-sales-card--teal"
                     negative_class=" monitoring-sales-card__value--negative" if label=="Deviasi" and value is not None and value<0 else ""
-                    st.markdown(f"<div class='monitoring-sales-card {accent_class}{_perf_motion_class}' style='--motion-order:{index}'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
+                    st.markdown(f"<div class='monitoring-sales-card {accent_class}'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
             st.markdown(f"##### Ringkasan Kumulatif YTD · Jan–{month_name} {int(selected_year)}")
             cum=st.columns(4,gap="small")
             cum_metrics=[("Actual Gross · YTD",y_actual),("Target · YTD",y_target),("A/T · YTD",y_ach),("Deviasi · YTD",y_dev)]
@@ -6656,7 +6597,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 with c:
                     display=f"{value:,.1f}%" if label.startswith("A/T") and value is not None else ("—" if value is None else f"{value:,.0f}")
                     negative_class=" monitoring-sales-card__value--negative" if label.startswith("Deviasi") and value is not None and value<0 else ""
-                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal{_perf_motion_class}'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
+                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal'><div class='monitoring-sales-card__label'>{label}</div><div class='monitoring-sales-card__value{negative_class}'>{display}</div></div>",unsafe_allow_html=True)
             m_principal=month_df.groupby(principal_col,dropna=False).agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum")).reset_index()
             m_principal=m_principal.rename(columns={principal_col:"Principal ID"})
             y_principal=ytd_df.groupby(principal_col,dropna=False).agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum")).reset_index().rename(columns={principal_col:"Principal ID"})
@@ -7105,7 +7046,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     disp_val = f"{val:,.1f}%" if lbl=="A/T" and val is not None else ("—" if val is None else f"Rp {val:,.0f}")
                     accent_class="monitoring-sales-card--orange" if index%2 else "monitoring-sales-card--teal"
                     negative_class=" monitoring-sales-card__value--negative" if lbl=="Deviasi" and val is not None and val<0 else ""
-                    st.markdown(f"<div class='monitoring-sales-card {accent_class}{_perf_motion_class}' style='--motion-order:{index}'><div class='monitoring-sales-card__label'>{lbl}</div><div class='monitoring-sales-card__value{negative_class}'>{disp_val}</div></div>",unsafe_allow_html=True)
+                    st.markdown(f"<div class='monitoring-sales-card {accent_class}'><div class='monitoring-sales-card__label'>{lbl}</div><div class='monitoring-sales-card__value{negative_class}'>{disp_val}</div></div>",unsafe_allow_html=True)
 
             # YTD cards — 4 kolom
             cum_tsb = st.columns(4,gap="small")
@@ -7116,7 +7057,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 with c_tsb:
                     disp_val = f"{val:,.1f}%" if lbl.startswith("A/T") and val is not None else ("—" if val is None else f"Rp {val:,.0f}")
                     negative_class=" monitoring-sales-card__value--negative" if lbl.startswith("Deviasi") and val is not None and val<0 else ""
-                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal{_perf_motion_class}'><div class='monitoring-sales-card__label'>{lbl}</div><div class='monitoring-sales-card__value{negative_class}'>{disp_val}</div></div>",unsafe_allow_html=True)
+                    st.markdown(f"<div class='monitoring-sales-card monitoring-sales-card--teal'><div class='monitoring-sales-card__label'>{lbl}</div><div class='monitoring-sales-card__value{negative_class}'>{disp_val}</div></div>",unsafe_allow_html=True)
 
             # ── AI Insight Toserba dengan susunan yang sama seperti Performance Sales ──
             st.markdown("#### 🧠 AI Insight · Strategi Capai Target Bulanan")
