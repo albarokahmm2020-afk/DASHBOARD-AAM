@@ -1170,16 +1170,47 @@ def _restore_drive_state():
 _restore_drive_state()
 
 def load_settings():
-    try: return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError): return {}
-def save_settings(settings):
+    try:
+        payload=json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        st.error(f"File konfigurasi {SETTINGS_PATH.name} tidak dapat dibaca: {exc}. File tidak akan ditimpa agar konfigurasi lama tetap aman.")
+        st.stop()
+    if not isinstance(payload,dict):
+        st.error(f"Format {SETTINGS_PATH.name} tidak valid. File tidak akan ditimpa agar konfigurasi lama tetap aman.")
+        st.stop()
+    return payload
+def save_settings(settings,notify=False):
     SETTINGS_PATH.parent.mkdir(parents=True,exist_ok=True)
     payload=json.dumps(settings,ensure_ascii=False,indent=2).encode("utf-8")
     SETTINGS_PATH.write_bytes(payload)
-    if st.secrets.get("gcp_service_account"):
-        try: _drive_upload_bytes(SETTINGS_PATH.name,payload,"application/json","settings",ACTIVE_BRANCH_CODE)
-        except Exception as exc: st.error(f"Konfigurasi tersimpan sementara, tetapi gagal disinkronkan ke Google Drive: {exc}")
+    try:
+        if not st.secrets.get("gcp_service_account"):
+            message="Konfigurasi hanya tersimpan di penyimpanan lokal sementara; Google Drive tidak dikonfigurasi, sehingga data dapat hilang saat aplikasi dimulai ulang."
+            st.session_state["_settings_sync_error"]=message
+            if notify: st.session_state["_settings_sync_notice"]="warning"
+            return False
+        _drive_upload_bytes(SETTINGS_PATH.name,payload,"application/json","settings",ACTIVE_BRANCH_CODE)
+    except Exception as exc:
+        message=f"Konfigurasi tersimpan lokal, tetapi gagal disinkronkan ke Google Drive: {exc}"
+        st.session_state["_settings_sync_error"]=message
+        if notify: st.session_state["_settings_sync_notice"]="error"
+        return False
+    st.session_state.pop("_settings_sync_error",None)
+    if notify: st.session_state["_settings_sync_notice"]="success"
+    return True
 settings=load_settings()
+_settings_sync_error=st.session_state.get("_settings_sync_error")
+_settings_sync_notice=st.session_state.pop("_settings_sync_notice",None)
+if _settings_sync_notice=="success":
+    st.success("Konfigurasi berhasil disimpan dan disinkronkan ke Google Drive.")
+elif _settings_sync_notice=="warning":
+    st.warning(st.session_state.get("_settings_sync_error","Konfigurasi hanya tersimpan secara lokal."))
+elif _settings_sync_notice=="error":
+    st.error(st.session_state.get("_settings_sync_error","Sinkronisasi konfigurasi ke Google Drive gagal."))
+elif _settings_sync_error:
+    st.warning(_settings_sync_error)
 # Custom Program Push names are stored in the same branch settings file as the
 # month-specific filters, allowing any number of programs without changing code.
 _custom_program_names=[]
@@ -4022,8 +4053,7 @@ if main_section=="Program Push" and "_active_push_month" in dir():
                 _bgv=_cfg_new[_prog]["business_group"]; st.session_state[f"filter_business_group_{_pkey2}"]=[] if _bgv=="All" else [_bgv]
                 _yv=_cfg_new[_prog]["year"]; st.session_state[f"filter_year_{_pkey2}"]=[] if _yv=="All" else [str(_yv)]
                 st.session_state[f"filter_metric_{_pkey2}"]=_cfg_new[_prog]["metric"]
-            save_settings(settings)
-            st.success(f"Konfigurasi {_active_push_month} tersimpan!")
+            save_settings(settings,notify=True)
             st.rerun()
 
 for kind,label in [("year","Year"),("month","Month"),("principal","Principal ID"),("product","Product Description")]:
