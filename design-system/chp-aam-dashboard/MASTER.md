@@ -189,6 +189,10 @@
 
 The dashboard reruns frequently as users change filters and periods, so data and page elements render immediately without entrance or stagger animations. Interactive cards use a subtle 180ms border/shadow change on hover; they do not move or resize. Respect `prefers-reduced-motion` by disabling transitions.
 
+## Data Visualization
+
+Altair charts use a shared light card style so they remain consistent with the dashboard's existing light interface: white plot area, rounded bordered container, restrained dashed gridlines, and readable sans-serif axis labels. Use blue for primary actual values, muted blue-gray for target/comparison values, teal or indigo for secondary series, and amber for target thresholds. Keep achievement/status colors semantic (red, amber, green), and retain legends, reference lines, and tooltips so color is never the only way to interpret data.
+
 ---
 
 ## Anti-Patterns (Do NOT Use)
