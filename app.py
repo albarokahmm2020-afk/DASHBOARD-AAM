@@ -4041,7 +4041,8 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
                             "weekly_start_date":_weekly_start_date.isoformat() if _weekly_start_date else None,
                             "weekly_end_date":_weekly_end_date.isoformat() if _weekly_end_date else None,
                             "target_allocation_basis":_target_basis,
-                            "target_total":float(_target_total)}
+                            "target_total":float(_target_total),
+                            "title_target_overrides":_prog_cfg2(_p,"title_target_overrides",{})}
             # Keep the Summary in sync with the current widgets on this rerun.
             _cfg_save.setdefault(_p,{}).update({
                 "weekly_target":float(_nweekly_target),
@@ -4051,6 +4052,7 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
                 "weekly_end_date":_weekly_end_date.isoformat() if _weekly_end_date else None,
                 "target_allocation_basis":_target_basis,
                 "target_total":float(_target_total),
+                "title_target_overrides":_cfg_save.get(_p,{}).get("title_target_overrides",{}),
             })
 
         _cfg_save.update(_cfg_new)
@@ -4136,13 +4138,14 @@ def apply_active_program_config(program, selected, config_month=None):
         _month_index = int(st.session_state.get("push_month_tab_idx", pd.Timestamp.now().month-1))
         _month_index = min(max(_month_index,0),11)
         active_month = list(MONTHS.values())[_month_index]
+    selected = dict(selected)
+    selected["_config_month"] = active_month
     rendered_cfg = globals().get("_cfg_save", {})
     cfg = rendered_cfg.get(program, {}) if isinstance(rendered_cfg,dict) and config_month is None else {}
     if not cfg:
         cfg = settings.get("program_config_by_month",{}).get(active_month,{}).get(program,{})
     if not cfg:
         cfg = PROGRAM_FILTER_DEFAULTS.get(program,{})
-    selected = dict(selected)
     year_value = str(cfg.get("year", "All") or "All")
     selected["year"] = [] if year_value == "All" else [year_value]
     selected["principal_name"] = []
@@ -4270,9 +4273,46 @@ def auto_target_allocation(program,selected,basis,total_target):
     _AUTO_TARGET_ALLOCATION_CACHE[cache_key]=allocation
     return allocation
 
+def _program_title_target_overrides(program,selected):
+    config_month=selected.get("_config_month")
+    if not config_month:
+        month_index=int(st.session_state.get("push_month_tab_idx",pd.Timestamp.now().month-1))
+        month_index=min(max(month_index,0),11)
+        config_month=list(MONTHS.values())[month_index]
+    overrides=settings.get("program_config_by_month",{}).get(config_month,{}).get(program,{}).get("title_target_overrides",{})
+    if not isinstance(overrides,dict):
+        return {}
+    cleaned={}
+    for title,value in overrides.items():
+        try:
+            amount=float(value)
+        except (TypeError,ValueError):
+            continue
+        title=str(title).strip()
+        if title and math.isfinite(amount) and amount>=0:
+            cleaned[title]=amount
+    return cleaned
+
 def target_for(scoped,program,selected,title=None,require_explicit=()):
     params={**selected,"program":program}
     if title is not None: params["salesperson"]=str(title)
+    overrides={} if selected.get("_skip_title_target_overrides") else _program_title_target_overrides(program,selected)
+    if title is None and overrides:
+        baseline=title_performance(scoped,program,{**selected,"_skip_title_target_overrides":True})
+        if baseline.empty:
+            return float(sum(overrides.values())),"Target per Sales Person Title"
+        override_by_key={key(name):value for name,value in overrides.items()}
+        totals=[]
+        for _,row in baseline.iterrows():
+            title_key=key(row["Sales Person Title"])
+            base_value=pd.to_numeric(pd.Series([row["Target"]]),errors="coerce").fillna(0).iloc[0]
+            totals.append(override_by_key.get(title_key,float(base_value)))
+        return float(sum(totals)),"Target per Sales Person Title"
+    if title is not None and overrides:
+        title_key=key(title)
+        for override_title,value in overrides.items():
+            if key(override_title)==title_key:
+                return value,"Target disesuaikan pada konfigurasi"
     allocation_basis=selected.get("target_allocation_basis","Manual / upload per Sales Person Title")
     if allocation_basis in {"Average 2026 (YTD)","Average 3 bulan terakhir"}:
         try: allocation_total=float(selected.get("target_total",0) or 0)
@@ -4332,7 +4372,7 @@ def title_performance(scoped,program,selected):
             rows.append({"Sales Person Title":title,"Actual":actual,"Target":tgt,
                          "A/T (%)":actual/tgt*100 if actual is not None and tgt else None,
                          "Deviation":actual-tgt if actual is not None else None})
-            seen.add(title.casefold())
+            seen.add(key(title))
     # Add title-only targets so target holders remain visible even without a transaction row.
     if target is not None and not target.empty:
         params={**selected,"program":program}
@@ -4341,7 +4381,7 @@ def title_performance(scoped,program,selected):
         if target_title_col:
             for raw_title in matching[target_title_col].dropna().astype(str).unique():
                 title=raw_title.strip()
-                if not title or title.casefold() in {"all","nan","none","<na>"} or title.casefold() in seen:
+                if not title or key(title) in {"all","nan","none","<na>"} or key(title) in seen:
                     continue
                 title_scoped=(scoped[scoped[title_col].astype(str).str.strip().str.casefold()==title.casefold()]
                               if title_col else scoped.iloc[0:0])
@@ -4351,7 +4391,7 @@ def title_performance(scoped,program,selected):
                 rows.append({"Sales Person Title":title,"Actual":actual,"Target":tgt,
                              "A/T (%)":actual/tgt*100 if actual is not None and tgt else None,
                              "Deviation":actual-tgt if actual is not None else None})
-                seen.add(title.casefold())
+                seen.add(key(title))
     allocation_basis=selected.get("target_allocation_basis","Manual / upload per Sales Person Title")
     if title_col and allocation_basis in {"Average 2026 (YTD)","Average 3 bulan terakhir"}:
         allocated=auto_target_allocation(program,selected,allocation_basis,selected.get("target_total",0))
@@ -4361,7 +4401,7 @@ def title_performance(scoped,program,selected):
         if history_title_col and allocated:
             for raw_title in historical_titles[history_title_col].dropna().astype(str).unique():
                 title=raw_title.strip()
-                if key(title) not in allocated or title.casefold() in seen:
+                if key(title) not in allocated or key(title) in seen:
                     continue
                 title_scoped=scoped[scoped[title_col].astype(str).str.strip().str.casefold()==title.casefold()]
                 actual=metric_actual(title_scoped,selected["metric"])
@@ -4370,7 +4410,15 @@ def title_performance(scoped,program,selected):
                 rows.append({"Sales Person Title":title,"Actual":actual,"Target":tgt,
                              "A/T (%)":actual/tgt*100 if actual is not None and tgt else None,
                              "Deviation":actual-tgt if actual is not None else None})
-                seen.add(title.casefold())
+                seen.add(key(title))
+    for title in _program_title_target_overrides(program,selected):
+        if key(title) in seen:
+            continue
+        actual=0
+        tgt,_=target_for(scoped.iloc[0:0],program,selected,title)
+        rows.append({"Sales Person Title":title,"Actual":actual,"Target":tgt,
+                     "A/T (%)":None,"Deviation":-tgt})
+        seen.add(key(title))
     return pd.DataFrame(rows).sort_values("Actual",ascending=False) if rows else pd.DataFrame()
 
 def append_daily_additions(scoped,by_title,metric):
@@ -8002,6 +8050,60 @@ elif page=="Program by Sales Person Title":
                 _configured_target_total=float(_weekly_config.get("target_total") or 0)
                 _weekly_denominator=_configured_target_total if _configured_target_total>0 else total_target
                 weekly_ratio=weekly_target_value/_weekly_denominator if _weekly_denominator>0 else 0.0
+            _target_editor_signature=hashlib.sha256(
+                "\n".join(by_title["Sales Person Title"].astype(str).map(key)).encode("utf-8")
+            ).hexdigest()[:10]
+            _target_editor_key=f"title_target_editor_{key(_active_config_month).replace(' ','_')}_{key(program).replace(' ','_')}_{_target_editor_signature}"
+            if st.session_state.pop("_title_target_saved_notice",False):
+                st.success("Target per Sales Person Title tersimpan di konfigurasi program dan total target sudah diperbarui.")
+            with st.expander("Edit Target per Sales Person Title",expanded=False):
+                st.caption("Ubah kolom Target Program lalu simpan. Total program, pencapaian, deviasi, dan target mingguan akan mengikuti jumlah target per title.")
+                _target_editor_source=by_title[["Sales Person Title","Target"]].copy()
+                _target_editor_source["Target"]=pd.to_numeric(_target_editor_source["Target"],errors="coerce").fillna(0)
+                with st.form(f"save_{_target_editor_key}"):
+                    _edited_title_targets=st.data_editor(
+                        _target_editor_source,
+                        key=_target_editor_key,
+                        width="stretch",
+                        hide_index=True,
+                        num_rows="fixed",
+                        column_config={
+                            "Sales Person Title":st.column_config.TextColumn("Sales Person Title",disabled=True),
+                            "Target":st.column_config.NumberColumn(
+                                "Target Program",min_value=0,
+                                step=1000 if selected["metric"]=="Total Sales" else 1,
+                                format="%,.0f",
+                            ),
+                        },
+                    )
+                    _save_title_targets=st.form_submit_button("Simpan target & update total",type="primary")
+                if _save_title_targets:
+                    _new_title_overrides={}
+                    _invalid_title_targets=False
+                    for _,_target_row in _edited_title_targets.iterrows():
+                        _target_title=str(_target_row["Sales Person Title"]).strip()
+                        try:
+                            _target_value=float(_target_row["Target"])
+                        except (TypeError,ValueError):
+                            _invalid_title_targets=True
+                            break
+                        if not _target_title or not math.isfinite(_target_value) or _target_value<0:
+                            _invalid_title_targets=True
+                            break
+                        if key(_target_title) in {key(existing) for existing in _new_title_overrides}:
+                            st.error(f"Sales Person Title duplikat setelah normalisasi: {_target_title}.")
+                            _invalid_title_targets=True
+                            break
+                        _new_title_overrides[_target_title]=_target_value
+                    if _invalid_title_targets:
+                        st.error("Target harus berupa angka nol atau lebih, dan setiap Sales Person Title harus unik.")
+                    else:
+                        _program_month_config=settings.setdefault("program_config_by_month",{}).setdefault(_active_config_month,{}).setdefault(program,{})
+                        _program_month_config["title_target_overrides"]=_new_title_overrides
+                        _program_month_config["target_total"]=float(sum(_new_title_overrides.values()))
+                        save_settings(settings,notify=True)
+                        st.session_state["_title_target_saved_notice"]=True
+                        st.rerun()
             by_title["TGT WEEKLY"]=pd.to_numeric(by_title["Target"],errors="coerce").fillna(0)*weekly_ratio
             by_title["DEV WEEKLY"]=by_title.apply(
                 lambda row:math.ceil(weekly_by_title.get(key(row.get("Sales Person Title")),0)-row["TGT WEEKLY"]) if pd.notna(row["TGT WEEKLY"]) else None,
