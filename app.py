@@ -1028,7 +1028,7 @@ def _operational_db_url():
         return ""
 
 def _operational_db_save(file_name, payload, branch=None):
-    """Persist branch-scoped operational CSV bytes in MongoDB Atlas."""
+    """Persist branch-scoped operational file bytes in MongoDB Atlas."""
     uri=_operational_db_url()
     if not uri:
         return False
@@ -1110,30 +1110,50 @@ OVERVIEW_DATA_DIR=APP_DIR if ACTIVE_BRANCH_CODE=="BDG" else BRANCH_DATA_DIR
 DAILY_DISCIPLINE_PATH=APP_DIR/"daily_discipline_latest.csv" if ACTIVE_BRANCH_CODE=="BDG" else BRANCH_DATA_DIR/"daily_discipline_latest.csv"
 VISIT_LOG_PATH=APP_DIR/"visit_log.csv" if ACTIVE_BRANCH_CODE=="BDG" else BRANCH_DATA_DIR/"visit_log.csv"
 def _restore_drive_state():
-    """Restore persistent operational files from Drive before loading app state."""
+    """Restore branch-scoped operational files before loading app state."""
     if (
         st.session_state.get("_drive_state_restored_branch")==ACTIVE_BRANCH_CODE
         or st.session_state.get("_drive_state_restore_skipped_branch")==ACTIVE_BRANCH_CODE
     ):
         return
     use_operational_db=bool(_operational_db_url())
+    mongo_settings_loaded=False
+    mongo_settings_load_failed=False
     if use_operational_db:
+        try:
+            settings_payload=_operational_db_load(SETTINGS_DRIVE_FILE_NAME,ACTIVE_BRANCH_CODE)
+            if settings_payload is not None:
+                settings_value=json.loads(settings_payload.decode("utf-8"))
+                if not isinstance(settings_value,dict):
+                    raise ValueError("Format konfigurasi MongoDB Atlas bukan object JSON.")
+                SETTINGS_PATH.parent.mkdir(parents=True,exist_ok=True)
+                SETTINGS_PATH.write_bytes(settings_payload)
+                mongo_settings_loaded=True
+        except Exception as exc:
+            mongo_settings_load_failed=True
+            st.warning(f"Konfigurasi tidak dapat dimuat dari MongoDB Atlas; aplikasi akan mencoba salinan lokal atau Google Drive. Detail: {exc}")
         try:
             for path,name in ((VISIT_LOG_PATH,"visit_log.csv"),(DAILY_DISCIPLINE_PATH,"daily_discipline_latest.csv")):
                 payload=_operational_db_load(name,ACTIVE_BRANCH_CODE)
                 if payload is not None:
                     path.parent.mkdir(parents=True,exist_ok=True)
                     path.write_bytes(payload)
-        except Exception:
-            st.warning("Penyimpanan database belum tersambung; data lokal tetap digunakan. Periksa MONGODB_URI dan akses Atlas.")
+        except Exception as exc:
+            st.warning(f"Data operasional tidak dapat dimuat dari MongoDB Atlas; salinan lokal tetap digunakan. Detail: {exc}")
     if not st.secrets.get("gcp_service_account"):
+        if use_operational_db and not mongo_settings_loaded and not mongo_settings_load_failed and SETTINGS_PATH.is_file():
+            try:
+                _operational_db_save(SETTINGS_DRIVE_FILE_NAME,SETTINGS_PATH.read_bytes(),ACTIVE_BRANCH_CODE)
+            except Exception as exc:
+                st.warning(f"Konfigurasi lokal belum dapat disalin ke MongoDB Atlas. Detail: {exc}")
         st.session_state["_drive_state_restored_branch"]=ACTIVE_BRANCH_CODE
         return
     files=[
-        (SETTINGS_PATH,SETTINGS_DRIVE_FILE_NAME,"settings"),
         (OVERVIEW_DATA_DIR/"overview_calendar.xlsx","overview_calendar.xlsx","overview"),
         (OVERVIEW_DATA_DIR/"overview_fixed_call.xlsx","overview_fixed_call.xlsx","overview"),
     ]
+    if not mongo_settings_loaded and (not use_operational_db or not SETTINGS_PATH.exists()):
+        files.insert(0,(SETTINGS_PATH,SETTINGS_DRIVE_FILE_NAME,"settings"))
     if not use_operational_db:
         files[1:1]=[(VISIT_LOG_PATH,"visit_log.csv","visit_logs"),(DAILY_DISCIPLINE_PATH,"daily_discipline_latest.csv","reports")]
     try:
@@ -1156,6 +1176,11 @@ def _restore_drive_state():
         st.session_state["_drive_state_restored_branch"]=ACTIVE_BRANCH_CODE
     except Exception as exc:
         st.warning(f"Tidak dapat memuat file simpanan dari Google Drive: {exc}")
+    if use_operational_db and not mongo_settings_loaded and not mongo_settings_load_failed and SETTINGS_PATH.is_file():
+        try:
+            _operational_db_save(SETTINGS_DRIVE_FILE_NAME,SETTINGS_PATH.read_bytes(),ACTIVE_BRANCH_CODE)
+        except Exception as exc:
+            st.warning(f"Konfigurasi lokal belum dapat disalin ke MongoDB Atlas. Detail: {exc}")
 _restore_drive_state()
 
 def load_settings():
@@ -1174,28 +1199,54 @@ def save_settings(settings,notify=False):
     SETTINGS_PATH.parent.mkdir(parents=True,exist_ok=True)
     payload=json.dumps(settings,ensure_ascii=False,indent=2).encode("utf-8")
     SETTINGS_PATH.write_bytes(payload)
-    try:
-        if not st.secrets.get("gcp_service_account"):
-            message="Konfigurasi hanya tersimpan di penyimpanan lokal sementara; Google Drive tidak dikonfigurasi, sehingga data dapat hilang saat aplikasi dimulai ulang."
-            st.session_state["_settings_sync_error"]=message
-            if notify: st.session_state["_settings_sync_notice"]="warning"
-            return False
-        drive_folder_id=_drive_storage_folder("settings",ACTIVE_BRANCH_CODE)
-        _drive_upload_bytes(SETTINGS_DRIVE_FILE_NAME,payload,"application/json","settings",ACTIVE_BRANCH_CODE)
-    except Exception as exc:
-        message=f"Konfigurasi tersimpan lokal, tetapi gagal disinkronkan ke Google Drive: {exc}"
+    mongo_error=None
+    drive_error=None
+    drive_folder_id=None
+    storage_backend=None
+    if _operational_db_url():
+        try:
+            if _operational_db_save(SETTINGS_DRIVE_FILE_NAME,payload,ACTIVE_BRANCH_CODE):
+                storage_backend="MongoDB Atlas"
+        except Exception as exc:
+            mongo_error=exc
+    if storage_backend is None and st.secrets.get("gcp_service_account"):
+        try:
+            drive_folder_id=_drive_storage_folder("settings",ACTIVE_BRANCH_CODE)
+            _drive_upload_bytes(SETTINGS_DRIVE_FILE_NAME,payload,"application/json","settings",ACTIVE_BRANCH_CODE)
+            storage_backend="Google Drive"
+        except Exception as exc:
+            drive_error=exc
+    if storage_backend is None:
+        if mongo_error and drive_error:
+            message=f"Konfigurasi tersimpan lokal, tetapi MongoDB Atlas dan Google Drive gagal disinkronkan. MongoDB: {mongo_error}; Google Drive: {drive_error}"
+        elif mongo_error:
+            message=f"Konfigurasi tersimpan lokal, tetapi gagal disinkronkan ke MongoDB Atlas: {mongo_error}"
+        elif drive_error:
+            message=f"Konfigurasi tersimpan lokal, tetapi gagal disinkronkan ke Google Drive: {drive_error}"
+        else:
+            message="Konfigurasi hanya tersimpan lokal sementara; MongoDB Atlas dan Google Drive belum dikonfigurasi."
         st.session_state["_settings_sync_error"]=message
-        if notify: st.session_state["_settings_sync_notice"]="error"
+        if notify: st.session_state["_settings_sync_notice"]="error" if mongo_error or drive_error else "warning"
         return False
+    st.session_state["_settings_sync_backend"]=storage_backend
+    if drive_folder_id:
+        st.session_state["_settings_drive_folder_id"]=drive_folder_id
+    else:
+        st.session_state.pop("_settings_drive_folder_id",None)
+    if storage_backend=="Google Drive" and mongo_error:
+        message=f"MongoDB Atlas gagal; konfigurasi berhasil disimpan ke Google Drive sebagai cadangan. Detail MongoDB: {mongo_error}"
+        st.session_state["_settings_sync_error"]=message
+        if notify: st.session_state["_settings_sync_notice"]="warning"
+        return True
     st.session_state.pop("_settings_sync_error",None)
-    st.session_state["_settings_drive_folder_id"]=drive_folder_id
     if notify: st.session_state["_settings_sync_notice"]="success"
     return True
 settings=load_settings()
 _settings_sync_error=st.session_state.get("_settings_sync_error")
 _settings_sync_notice=st.session_state.pop("_settings_sync_notice",None)
 if _settings_sync_notice=="success":
-    st.success("Konfigurasi berhasil disimpan dan disinkronkan ke Google Drive.")
+    _settings_sync_backend=st.session_state.pop("_settings_sync_backend","penyimpanan utama")
+    st.success(f"Konfigurasi berhasil disimpan dan disinkronkan ke {_settings_sync_backend}.")
     _settings_drive_folder_id=st.session_state.get("_settings_drive_folder_id")
     if _settings_drive_folder_id:
         st.markdown(f"[Buka folder Google Drive tempat konfigurasi tersimpan](https://drive.google.com/drive/folders/{_settings_drive_folder_id})")
