@@ -2653,44 +2653,61 @@ button[kind='primary']:hover,button[kind='secondary']:hover {{ transform:none !i
 @media(prefers-reduced-motion:reduce) {{ .monitoring-sales-card,.monitoring-sales-fot,.scorecard,div[data-testid='stMetric'],div[data-testid='stVegaLiteChart'],button {{ transition:none !important; animation:none !important; transform:none !important; }} }}
 </style>
 """,unsafe_allow_html=True)
-if branch_header_img:
-    _branch_header_html=f"<div class='brand brand--reference'>{branch_header_img}</div>"
-else:
-    _branch_header_html=f"<div class='brand'>{bandung_header_img}{logo_aam_img}<div class='brand-copy'><h1>CHP AAM</h1><div class='brand-caption'><span class='bandung-badge'>CABANG {ACTIVE_BRANCH_NAME.upper()} · {ACTIVE_BRANCH_CODE}</span><span>PUSH PERFORMANCE · Monitoring actual, target, achievement, dan insight per program</span></div><div class='brand-landmark-label'>{_theme['landmarks'].replace(' · ',' <i>·</i> ')}</div></div>{attack_img}</div>"
-st.markdown(_branch_header_html,unsafe_allow_html=True)
-_workspace_cols=st.columns([1.35,2.2,3.45],gap="medium",vertical_alignment="bottom")
-with _workspace_cols[0]:
-    st.markdown("<div class='sidebar-eyebrow'>WORKSPACE · CABANG AKTIF</div>",unsafe_allow_html=True)
-    _branch_choice=st.selectbox(
-        "Pilih Cabang",list(BRANCH_OPTIONS),
-        format_func=lambda code:f"{BRANCH_OPTIONS[code]} ({code})",
-        key="active_branch_code",on_change=_reset_branch_session,
-        label_visibility="collapsed",
-    )
-with _workspace_cols[1]:
-    st.markdown(f"<span class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(BRANCH_OPTIONS[_branch_choice])} · {html.escape(_branch_choice)}</span>",unsafe_allow_html=True)
-with _workspace_cols[2]:
-    st.caption("Data, target, dan laporan mengikuti cabang yang sedang dipilih.")
 if "dashboard_page" not in st.session_state:
     st.session_state["dashboard_page"]=settings.get("dashboard_page","Summary Program")
 if st.session_state["dashboard_page"]=="Sasaran per Sales Person Title":
     st.session_state["dashboard_page"]="Sasaran Program"
 if "dashboard_section" not in st.session_state:
     st.session_state["dashboard_section"]=settings.get("dashboard_section","Program Push")
-_main_labels=["Performance Sales","Program Push","Breakdown Target","Menu Insentif","Report"]
-st.markdown("<div class='main-nav-anchor'>NAVIGASI UTAMA</div>",unsafe_allow_html=True)
-main_section=st.radio(
-    "Navigasi utama",_main_labels,horizontal=True,key="dashboard_section",
-    label_visibility="collapsed",
+_is_summary_program=(
+    st.session_state["dashboard_section"]=="Program Push"
+    and st.session_state["dashboard_page"]=="Summary Program"
 )
-if main_section=="Program Push":
-    page=st.radio(
-        "Pilih tampilan Program Push",
-        ["Summary Program","Program by Sales Person Title","Sasaran Program","Sasaran Kunjungan Harian per Sales Person Title"],
-        horizontal=True,key="dashboard_page",
+_summary_screenshot_mode=False
+if _is_summary_program:
+    _summary_screenshot_mode=st.toggle(
+        "Minimalkan tampilan untuk screenshot",
+        key="program_summary_screenshot_mode",
+        help="Sembunyikan navigasi, pemilih bulan, dan konfigurasi. Aktifkan kembali untuk menampilkan kontrol.",
     )
+
+if not _summary_screenshot_mode:
+    if branch_header_img:
+        _branch_header_html=f"<div class='brand brand--reference'>{branch_header_img}</div>"
+    else:
+        _branch_header_html=f"<div class='brand'>{bandung_header_img}{logo_aam_img}<div class='brand-copy'><h1>CHP AAM</h1><div class='brand-caption'><span class='bandung-badge'>CABANG {ACTIVE_BRANCH_NAME.upper()} · {ACTIVE_BRANCH_CODE}</span><span>PUSH PERFORMANCE · Monitoring actual, target, achievement, dan insight per program</span></div><div class='brand-landmark-label'>{_theme['landmarks'].replace(' · ',' <i>·</i> ')}</div></div>{attack_img}</div>"
+    st.markdown(_branch_header_html,unsafe_allow_html=True)
+    _workspace_cols=st.columns([1.35,2.2,3.45],gap="medium",vertical_alignment="bottom")
+    with _workspace_cols[0]:
+        st.markdown("<div class='sidebar-eyebrow'>WORKSPACE · CABANG AKTIF</div>",unsafe_allow_html=True)
+        _branch_choice=st.selectbox(
+            "Pilih Cabang",list(BRANCH_OPTIONS),
+            format_func=lambda code:f"{BRANCH_OPTIONS[code]} ({code})",
+            key="active_branch_code",on_change=_reset_branch_session,
+            label_visibility="collapsed",
+        )
+    with _workspace_cols[1]:
+        st.markdown(f"<span class='dashboard-pill dashboard-pill--branch'>Cabang {html.escape(BRANCH_OPTIONS[_branch_choice])} · {html.escape(_branch_choice)}</span>",unsafe_allow_html=True)
+    with _workspace_cols[2]:
+        st.caption("Data, target, dan laporan mengikuti cabang yang sedang dipilih.")
+
+_main_labels=["Performance Sales","Program Push","Breakdown Target","Menu Insentif","Report"]
+if not _summary_screenshot_mode:
+    st.markdown("<div class='main-nav-anchor'>NAVIGASI UTAMA</div>",unsafe_allow_html=True)
+    main_section=st.radio(
+        "Navigasi utama",_main_labels,horizontal=True,key="dashboard_section",
+    )
+    if main_section=="Program Push":
+        page=st.radio(
+            "Pilih tampilan Program Push",
+            ["Summary Program","Program by Sales Person Title","Sasaran Program","Sasaran Kunjungan Harian per Sales Person Title"],
+            horizontal=True,key="dashboard_page",
+        )
+    else:
+        page=None
 else:
-    page=None
+    main_section=st.session_state["dashboard_section"]
+    page=st.session_state["dashboard_page"]
 settings["dashboard_section"]=main_section
 
 # ── TAB BULAN untuk Program Push ─────────────────────────────────────────────
@@ -2714,16 +2731,17 @@ if main_section=="Program Push":
     _active_push_month_num = _saved_tab + 1
     _pbm_key = _active_push_month   # key untuk per-bulan settings
 
-    _tab_cols = st.columns(12, gap="small")
-    for _ti, (_tcol, _tabbr) in enumerate(zip(_tab_cols, _tab_abbr)):
-        with _tcol:
-            _is_active = (_ti == _saved_tab)
-            if st.button(_tabbr, key=f"tab_month_{_ti}", width="stretch",
-                         type="primary" if _is_active else "secondary"):
-                st.session_state["push_month_tab_idx"] = _ti
-                settings["push_month_tab_idx"] = _ti
-                save_settings(settings)
-                st.rerun()
+    if not _summary_screenshot_mode:
+        _tab_cols = st.columns(12, gap="small")
+        for _ti, (_tcol, _tabbr) in enumerate(zip(_tab_cols, _tab_abbr)):
+            with _tcol:
+                _is_active = (_ti == _saved_tab)
+                if st.button(_tabbr, key=f"tab_month_{_ti}", width="stretch",
+                             type="primary" if _is_active else "secondary"):
+                    st.session_state["push_month_tab_idx"] = _ti
+                    settings["push_month_tab_idx"] = _ti
+                    save_settings(settings)
+                    st.rerun()
 
     # ── Load konfigurasi per bulan ────────────────────────────────────────
     _pbm_cfg = settings.setdefault("program_config_by_month", {})
@@ -2774,7 +2792,8 @@ if main_section=="Program Push":
         st.session_state[f"filter_year_{_pkey}"] = [] if _year_val=="All" else [str(_year_val)]
         st.session_state[f"filter_metric_{_pkey}"] = _cfg_save[_prog].get("metric","Total Relasi Beli Transaksi")
 
-    st.caption(f"📅 Konfigurasi yang sedang dibuka: **{_active_push_month}**. Bulan transaksi dihitung sesuai pilihan tiap program.")
+    if not _summary_screenshot_mode:
+        st.caption(f"📅 Konfigurasi yang sedang dibuka: **{_active_push_month}**. Bulan transaksi dihitung sesuai pilihan tiap program.")
 
 with st.sidebar:
     with st.expander("Data dashboard", expanded=False):
@@ -3755,6 +3774,14 @@ if main_section=="Program Push" and "_active_push_month" in dir():
         st.session_state[widget_key]=selected_months
         st.session_state[f"{widget_key}__previous"]=selected_months
 
+    if _summary_screenshot_mode:
+        st.markdown("""
+<style>
+div[data-testid='stElementContainer']:has(.program-config-anchor)
++ div[data-testid='stElementContainer'] { display:none !important; }
+</style>
+<div class='program-config-anchor'></div>
+""",unsafe_allow_html=True)
     with st.expander(f"⚙️ Konfigurasi Program · {_active_push_month}", expanded=False):
         st.caption("Pilih bulan transaksi, tahun, metric, dan filter masing-masing program untuk perhitungan Summary.")
         st.caption("Perubahan konfigurasi tersimpan otomatis dan akan dipulihkan saat dashboard dibuka kembali.")
