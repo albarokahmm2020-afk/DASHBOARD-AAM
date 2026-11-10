@@ -2671,12 +2671,12 @@ if _is_summary_program:
         help="Sembunyikan navigasi, pemilih bulan, dan konfigurasi. Aktifkan kembali untuk menampilkan kontrol.",
     )
 
+if branch_header_img:
+    _branch_header_html=f"<div class='brand brand--reference'>{branch_header_img}</div>"
+else:
+    _branch_header_html=f"<div class='brand'>{bandung_header_img}{logo_aam_img}<div class='brand-copy'><h1>CHP AAM</h1><div class='brand-caption'><span class='bandung-badge'>CABANG {ACTIVE_BRANCH_NAME.upper()} · {ACTIVE_BRANCH_CODE}</span><span>PUSH PERFORMANCE · Monitoring actual, target, achievement, dan insight per program</span></div><div class='brand-landmark-label'>{_theme['landmarks'].replace(' · ',' <i>·</i> ')}</div></div>{attack_img}</div>"
+st.markdown(_branch_header_html,unsafe_allow_html=True)
 if not _summary_screenshot_mode:
-    if branch_header_img:
-        _branch_header_html=f"<div class='brand brand--reference'>{branch_header_img}</div>"
-    else:
-        _branch_header_html=f"<div class='brand'>{bandung_header_img}{logo_aam_img}<div class='brand-copy'><h1>CHP AAM</h1><div class='brand-caption'><span class='bandung-badge'>CABANG {ACTIVE_BRANCH_NAME.upper()} · {ACTIVE_BRANCH_CODE}</span><span>PUSH PERFORMANCE · Monitoring actual, target, achievement, dan insight per program</span></div><div class='brand-landmark-label'>{_theme['landmarks'].replace(' · ',' <i>·</i> ')}</div></div>{attack_img}</div>"
-    st.markdown(_branch_header_html,unsafe_allow_html=True)
     _workspace_cols=st.columns([1.35,2.2,3.45],gap="medium",vertical_alignment="bottom")
     with _workspace_cols[0]:
         st.markdown("<div class='sidebar-eyebrow'>WORKSPACE · CABANG AKTIF</div>",unsafe_allow_html=True)
