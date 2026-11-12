@@ -4298,7 +4298,12 @@ def auto_target_allocation(program,selected,basis,total_target):
     historic["_auto_month"]=historic["_auto_date"].dt.to_period("M")
     historic["_auto_title"]=historic[title_col].astype("string").str.strip()
     if metric=="Total Sales":
-        monthly=historic.groupby(["_auto_month","_auto_title"],dropna=False)[sales_col].sum()
+        # Monthly files may encode low-cardinality sales columns as categorical.
+        # Cast to object before numeric conversion so groupby sums real values.
+        historic["_auto_sales"]=pd.to_numeric(
+            historic[sales_col].astype("object"),errors="coerce",
+        ).fillna(0)
+        monthly=historic.groupby(["_auto_month","_auto_title"],dropna=False)["_auto_sales"].sum()
     else:
         customer_col=col(historic,"customer")
         if customer_col:
@@ -8078,6 +8083,10 @@ elif page=="Program by Sales Person Title":
         if by_title.empty:
             st.info("Kolom Sales Person Title belum tersedia pada database.")
         else:
+            total_target=float(pd.to_numeric(by_title["Target"],errors="coerce").fillna(0).sum())
+            tgt=total_target
+            achievement=actual/total_target*100 if actual is not None and total_target>0 else None
+            deviation=actual-total_target if actual is not None else None
             weekly_by_title,weekly_actual_program,weekly_count,weekly_label=weekly_program_performance(scoped,selected["metric"],selected,calendar_path)
             _active_idx=int(st.session_state.get("push_month_tab_idx",pd.Timestamp.now().month-1))
             _active_idx=min(max(_active_idx,0),11)
@@ -8108,7 +8117,7 @@ elif page=="Program by Sales Person Title":
             if st.session_state.pop("_title_target_saved_notice",False):
                 st.success("Target per Sales Person Title tersimpan di konfigurasi program dan total target sudah diperbarui.")
             with st.expander("Edit Target per Sales Person Title",expanded=False):
-                st.caption("Ubah kolom Target Program lalu simpan. Total program, pencapaian, deviasi, dan target mingguan akan mengikuti jumlah target per title.")
+                st.caption("Total Target Program selalu dihitung dari jumlah Target Program per title yang diplot. Ubah target di bawah lalu simpan; pencapaian, deviasi, dan target mingguan akan menyesuaikan.")
                 _target_editor_source=by_title[["Sales Person Title","Target"]].copy()
                 _target_editor_source["Target"]=pd.to_numeric(_target_editor_source["Target"],errors="coerce").fillna(0)
                 with st.form(f"save_{_target_editor_key}"):
@@ -8180,7 +8189,7 @@ elif page=="Program by Sales Person Title":
             has_target=pd.to_numeric(daily_table["TGT"],errors="coerce").fillna(0).ne(0)
             daily_table=daily_table[has_actual|has_target].reset_index(drop=True)
             total_actual=0 if actual is None else actual
-            total_target=0 if tgt is None else tgt
+            total_target=float(pd.to_numeric(by_title["Target"],errors="coerce").fillna(0).sum())
             total_weekly_target=float(pd.to_numeric(by_title["TGT WEEKLY"],errors="coerce").fillna(0).sum())
             total_weekly_actual=weekly_actual_program
             total_row={column:0 for column in daily_table.columns}
