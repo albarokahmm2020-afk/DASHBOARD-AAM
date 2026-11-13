@@ -3018,12 +3018,36 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
         suffix=Path(name).suffix.lower()
         if suffix==".xlsx":
             period=Path(name).stem.upper().replace(f"DATABASE_PUSH_{branch_code}_", "")
-            candidates[period]=item
+            period_parts=period.split("_")
+            if (
+                len(period_parts)!=2
+                or not all(part.isdigit() for part in period_parts)
+                or len(period_parts[0])!=4
+                or not 1<=int(period_parts[1])<=12
+            ):
+                continue
+            period_key=(int(period_parts[0]),int(period_parts[1]))
+            try:
+                file_size=int(item.get("size",0) or 0)
+            except (TypeError,ValueError):
+                file_size=0
+            candidate_version=(
+                str(item.get("modifiedTime","")),
+                file_size,
+                str(item.get("id","")),
+            )
+            previous=candidates.get(period_key)
+            if previous is None or candidate_version>previous[0]:
+                candidates[period_key]=(candidate_version,item)
     if not candidates:
         raise FileNotFoundError(
-            f"Belum ada workbook XLSX bulanan untuk cabang {branch_code} di database_monthly_split."
+            f"Belum ada workbook XLSX bulanan dengan nama database_push_{branch_code}_<YYYY>_<MM>.xlsx "
+            f"untuk cabang {branch_code} di database_monthly_split."
         )
-    return sorted(candidates.values(),key=lambda item:item.get("name",""))
+    return sorted(
+        (entry[1] for entry in candidates.values()),
+        key=lambda item:item.get("name",""),
+    )
 
 def _download_drive_monthly_files(files, destination, service_account_info):
     """Download changed month files one at a time and keep a local reusable copy."""
