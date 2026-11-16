@@ -1021,9 +1021,18 @@ def _drive_delete_file(file_name,category,branch=None):
 def _operational_db_url():
     """MongoDB Atlas URI stored in Streamlit Secrets as MONGODB_URI."""
     try:
-        return str(st.secrets.get("MONGODB_URI", "")).strip()
+        uri=str(st.secrets.get("MONGODB_URI", "")).strip()
     except Exception:
+        uri=""
+    if uri and (
+        not uri.startswith(("mongodb://","mongodb+srv://"))
+        or "<" in uri
+        or ">" in uri
+    ):
+        st.session_state["_operational_db_config_error"]="MONGODB_URI tidak valid atau masih berisi placeholder. Perbarui secret MONGODB_URI dengan connection string Atlas yang benar."
         return ""
+    st.session_state.pop("_operational_db_config_error",None)
+    return uri
 
 def _operational_db_save(file_name, payload, branch=None):
     """Persist branch-scoped operational file bytes in MongoDB Atlas."""
@@ -1110,6 +1119,11 @@ VISIT_LOG_PATH=APP_DIR/"visit_log.csv" if ACTIVE_BRANCH_CODE=="BDG" else BRANCH_
 def _restore_drive_state():
     """Load authoritative branch settings from MongoDB and restore other files once."""
     use_operational_db=bool(_operational_db_url())
+    if not use_operational_db:
+        st.warning(st.session_state.get(
+            "_operational_db_config_error",
+            "MONGODB_URI belum dikonfigurasi; konfigurasi hanya dapat dibaca dari salinan lokal.",
+        ))
     mongo_settings_loaded=False
     mongo_settings_load_failed=False
     if use_operational_db:
@@ -1124,7 +1138,7 @@ def _restore_drive_state():
                 mongo_settings_loaded=True
         except Exception as exc:
             mongo_settings_load_failed=True
-            st.warning(f"Konfigurasi tidak dapat dimuat dari MongoDB Atlas; salinan lokal digunakan sementara. Detail: {exc}")
+            st.warning(f"Konfigurasi tidak dapat dimuat dari MongoDB Atlas; salinan lokal digunakan sementara. Jenis error: {type(exc).__name__}. Periksa MONGODB_URI dan akses jaringan Atlas.")
         if not mongo_settings_loaded and not mongo_settings_load_failed and SETTINGS_PATH.is_file():
             try:
                 _operational_db_save(SETTINGS_DB_DOCUMENT_NAME,SETTINGS_PATH.read_bytes(),ACTIVE_BRANCH_CODE)
@@ -1143,7 +1157,7 @@ def _restore_drive_state():
                     path.parent.mkdir(parents=True,exist_ok=True)
                     path.write_bytes(payload)
         except Exception as exc:
-            st.warning(f"Data operasional tidak dapat dimuat dari MongoDB Atlas; salinan lokal tetap digunakan. Detail: {exc}")
+            st.warning(f"Data operasional tidak dapat dimuat dari MongoDB Atlas; salinan lokal tetap digunakan. Jenis error: {type(exc).__name__}. Periksa MONGODB_URI dan akses jaringan Atlas.")
     if not st.secrets.get("gcp_service_account"):
         st.session_state["_drive_state_restored_branch"]=ACTIVE_BRANCH_CODE
         return
@@ -1197,7 +1211,10 @@ def save_settings(settings,notify=False):
         if not _operational_db_save(SETTINGS_DB_DOCUMENT_NAME,payload,ACTIVE_BRANCH_CODE):
             raise RuntimeError("MongoDB Atlas tidak mengonfirmasi penyimpanan konfigurasi.")
     except Exception as exc:
-        message=f"Konfigurasi tersimpan lokal, tetapi gagal disinkronkan ke MongoDB Atlas: {exc}"
+        detail=st.session_state.get("_operational_db_config_error")
+        if not detail:
+            detail=f"Jenis error: {type(exc).__name__}. Periksa MONGODB_URI dan akses jaringan Atlas."
+        message=f"Konfigurasi tersimpan lokal, tetapi gagal disinkronkan ke MongoDB Atlas. {detail}"
         st.session_state["_settings_sync_error"]=message
         if notify: st.session_state["_settings_sync_notice"]="error"
         return False
