@@ -6,7 +6,11 @@ Streamlit entry point: `app.py`. Assets are stored beside the app for one-step G
 
 The Streamlit interface uses the light enterprise theme configured in `.streamlit/config.toml`. The project-level UI UX Pro Max skill and its searchable design guidance are installed in `.agents/skills/ui-ux-pro-max/`; the dashboard design tokens and responsive/motion decisions are recorded in `design-system/chp-aam-dashboard/MASTER.md`.
 
-Run the dashboard locally with `streamlit run app.py` after installing `requirements.txt`. Google Drive data restoration and sync remain optional and require credentials in Streamlit secrets.
+Run the dashboard locally with `streamlit run app.py` after installing `requirements.txt`. Google Drive data restoration and sync remain optional and require credentials in Streamlit secrets. Program Push settings are stored in MongoDB Atlas and require `MONGODB_URI` in Streamlit secrets.
+
+## Konfigurasi Program Push
+
+Konfigurasi per cabang dibaca dari MongoDB Atlas (`dashboard_aam.operational_files`) pada setiap rerun aplikasi dan disimpan dengan ID dokumen `<CABANG>:dashboard_settings_<CABANG>.json`. File konfigurasi di Google Drive tidak lagi dibaca atau ditulis; file Drive lama tetap ada sebagai arsip dan perlu dihapus manual jika tidak dibutuhkan. Jika dokumen MongoDB belum ada, konfigurasi lokal yang tersedia hanya dipakai satu kali untuk menginisialisasi dokumen tersebut. Kegagalan koneksi MongoDB ditampilkan di dashboard; perubahan hanya tersimpan lokal sampai koneksi pulih.
 
 # Update database dashboard
 
