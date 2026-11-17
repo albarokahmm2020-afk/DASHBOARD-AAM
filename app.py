@@ -5756,14 +5756,15 @@ elif main_section=="Report":
 
         st.markdown("##### 2. Program PUSH · Actual mengikuti Summary Program")
         push_daily_rows=[]
-        _report_month_name=MONTHS[report_date.month]
-        for _report_program in PROGRAMS:
+        _summary_month_index=int(st.session_state.get("push_month_tab_idx",pd.Timestamp.now().month-1))
+        _summary_month_index=min(max(_summary_month_index,0),11)
+        _summary_program_month=list(MONTHS.values())[_summary_month_index]
+        _summary_programs=[p for p in settings.get("programs",PROGRAMS) if p in PROGRAMS] or PROGRAMS
+        for _report_program in _summary_programs:
             _report_selected={"year":[],"month":[],"principal_name":[],"principal":[],"channel_group":[],"business_group":[],"product_code":[],"product":[],"metric":"Total Relasi Beli Transaksi"}
-            _report_selected=apply_active_program_config(_report_program,_report_selected,config_month=_report_month_name)
-            _report_selected["year"]=[str(report_date.year)]
-            _report_selected["month"]=[_report_month_name]
+            _report_selected=apply_active_program_config(_report_program,_report_selected)
             _report_scoped,_report_actual,_report_target,_report_achievement,_report_deviation,_=calculate_program_kpi(_report_program,_report_selected)
-            push_daily_rows.append({"Nama program":program_label(_report_program,month=_report_month_name),"Metric":_report_selected["metric"],"Target":_report_target or 0,"Actual":_report_actual or 0,"A/T":_report_achievement})
+            push_daily_rows.append({"Nama program":program_label(_report_program,month=_summary_program_month),"Metric":_report_selected["metric"],"Target":_report_target or 0,"Actual":_report_actual or 0,"A/T":_report_achievement})
         push_daily_df=pd.DataFrame(push_daily_rows)
         if not push_daily_df.empty:
             st.dataframe(push_daily_df.drop(columns=["Metric"]),width="stretch",hide_index=True,column_config={"Target":st.column_config.NumberColumn(format="%,.0f"),"Actual":st.column_config.NumberColumn(format="%,.0f"),"A/T":st.column_config.NumberColumn(format="%.1f%%")})
