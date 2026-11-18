@@ -6854,8 +6854,8 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
         elif perf_view=="KPI Tahunan Sales Person":
             st.markdown("#### KPI Tahunan · Sales Person Title")
             st.caption("A/T dihitung dari total actual ÷ total target; Principal on target dihitung dari Principal ID dengan A/T ≥100%; relasi beli adalah jumlah Customer Name unik dengan transaksi positif.")
-            kpi_period=st.radio("Cakupan KPI",["Tahun penuh","Januari sampai bulan terpilih"],horizontal=True,key="performance_annual_kpi_period")
-            kpi_month_limit=12 if kpi_period=="Tahun penuh" else int(selected_month)
+            kpi_month_options=sorted(perf.loc[perf["_perf_year"]==int(selected_year),"_perf_month"].dropna().astype(int).unique().tolist())
+            kpi_months=st.multiselect("Month KPI Tahunan",kpi_month_options,default=kpi_month_options,format_func=lambda month:MONTHS.get(int(month),str(month)),key="performance_annual_kpi_months",placeholder="Pilih satu atau beberapa bulan")
             kpi_source=perf.copy()
             if selected_bg:
                 kpi_source=kpi_source[kpi_source[bg_col].astype(str).isin(selected_bg)]
@@ -6863,11 +6863,13 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 kpi_source=kpi_source[kpi_source["_perf_principal_id"].isin(selected_principal)]
             if selected_sp and sp_col:
                 kpi_source=kpi_source[kpi_source[sp_col].astype(str).isin(selected_sp)]
-            kpi_current=kpi_source[(kpi_source["_perf_year"]==int(selected_year))&(kpi_source["_perf_month"]<=kpi_month_limit)].copy()
-            kpi_previous=kpi_source[(kpi_source["_perf_year"]==int(selected_year)-1)&(kpi_source["_perf_month"]<=kpi_month_limit)].copy()
+            kpi_current=kpi_source[(kpi_source["_perf_year"]==int(selected_year))&(kpi_source["_perf_month"].isin(kpi_months))].copy()
+            kpi_previous=kpi_source[(kpi_source["_perf_year"]==int(selected_year)-1)&(kpi_source["_perf_month"].isin(kpi_months))].copy()
             kpi_customer_col=col(df,"customer")
             if not sp_col:
                 st.warning("Kolom Sales Person Title tidak ditemukan di database.")
+            elif not kpi_months:
+                st.info("Pilih minimal satu bulan untuk menghitung KPI tahunan.")
             elif kpi_current.empty:
                 st.info(f"Belum ada data untuk tahun {int(selected_year)} pada cakupan yang dipilih.")
             else:
@@ -6901,7 +6903,8 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                 kpi_sales["Growth Relasi Beli (%)"]=kpi_sales.apply(lambda row:(row["Growth Relasi Beli (Jumlah)"]/row["Relasi Beli Tahun Lalu"]*100) if row["Relasi Beli Tahun Lalu"]>0 else (0.0 if row["Relasi Beli Tahun Ini"]==0 else float("nan")),axis=1)
                 kpi_sales=kpi_sales.rename(columns={"Principal_On_Target":"Principal On Target","Total_Principal":"Total Principal"}).sort_values("A/T Tahunan (%)",ascending=False,na_position="last").reset_index(drop=True)
                 kpi_display=kpi_sales[["Sales Person Title","Actual_Tahunan","Target_Tahunan","A/T Tahunan (%)","Principal On Target","Total Principal","Principal On Target (%)","Relasi Beli Tahun Ini","Relasi Beli Tahun Lalu","Growth Relasi Beli (Jumlah)","Growth Relasi Beli (%)","Bulan_Data"]].rename(columns={"Actual_Tahunan":"Actual Tahun Ini","Target_Tahunan":"Target Tahun Ini","Bulan_Data":"Bulan Data"})
-                st.caption(f"Periode: {int(selected_year)} dibanding {int(selected_year)-1}, bulan 1–{kpi_month_limit}. Actual/target dijumlahkan dari transaksi pada periode tersebut; pertumbuhan relasi = relasi unik tahun ini dikurangi tahun lalu. Tahun penuh memakai seluruh bulan yang tersedia di database.")
+                kpi_month_labels=", ".join(MONTHS.get(int(month),str(month)) for month in kpi_months)
+                st.caption(f"Periode: {kpi_month_labels} · {int(selected_year)} dibanding bulan yang sama pada {int(selected_year)-1}. Actual/target dijumlahkan dari transaksi pada bulan terpilih; pertumbuhan relasi membandingkan jumlah Customer Name unik dengan transaksi positif.")
                 if not kpi_customer_col:
                     st.warning("Kolom Customer Name tidak tersedia; KPI Growth Relasi Beli belum bisa dihitung.")
                 st.dataframe(kpi_display,width="stretch",hide_index=True,column_config={"A/T Tahunan (%)":st.column_config.NumberColumn(format="%.1f%%"),"Principal On Target (%)":st.column_config.NumberColumn(format="%.1f%%"),"Growth Relasi Beli (%)":st.column_config.NumberColumn(format="%.1f%%")})
