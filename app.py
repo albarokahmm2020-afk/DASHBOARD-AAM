@@ -6768,7 +6768,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
 </script>'''
             st.components.v1.html(markup,height=height,scrolling=False)
 
-        perf_view=st.radio("Sub menu Performance Sales",["Monitoring Sales","Analisis Pivot","Toserba","Customer di Bawah Rata-rata","Detail Customer"],horizontal=True,key="performance_view")
+        perf_view=st.radio("Sub menu Performance Sales",["Monitoring Sales","KPI Tahunan Sales Person","Analisis Pivot","Toserba","Customer di Bawah Rata-rata","Detail Customer"],horizontal=True,key="performance_view")
         if perf_view=="Analisis Pivot":
             st.markdown("#### Analisis Pivot · Database")
             st.caption("Atur header baris dan kolom, pilih parameter yang dihitung, lalu tentukan cara perhitungannya. Filter Bisnis Group, Sales Person, tahun, dan bulan di atas tetap berlaku.")
@@ -6851,6 +6851,61 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                         pivot_export_frames.append(pivot_result.assign(Parameter=_measure))
                     _pivot_export=pd.concat(pivot_export_frames,ignore_index=True,sort=False) if pivot_export_frames else pd.DataFrame()
                     st.download_button("⬇ Unduh hasil pivot (.csv)",data=_pivot_export.to_csv(index=False).encode("utf-8-sig"),file_name=f"pivot_performance_{int(selected_year)}_{int(selected_month):02d}.csv",mime="text/csv",key="download_performance_pivot")
+        elif perf_view=="KPI Tahunan Sales Person":
+            st.markdown("#### KPI Tahunan · Sales Person Title")
+            st.caption("A/T dihitung dari total actual ÷ total target; Principal on target dihitung dari Principal ID dengan A/T ≥100%; relasi beli adalah jumlah Customer Name unik dengan transaksi positif.")
+            kpi_period=st.radio("Cakupan KPI",["Tahun penuh","Januari sampai bulan terpilih"],horizontal=True,key="performance_annual_kpi_period")
+            kpi_month_limit=12 if kpi_period=="Tahun penuh" else int(selected_month)
+            kpi_source=perf.copy()
+            if selected_bg:
+                kpi_source=kpi_source[kpi_source[bg_col].astype(str).isin(selected_bg)]
+            if "selected_principal" in globals() and selected_principal:
+                kpi_source=kpi_source[kpi_source["_perf_principal_id"].isin(selected_principal)]
+            if selected_sp and sp_col:
+                kpi_source=kpi_source[kpi_source[sp_col].astype(str).isin(selected_sp)]
+            kpi_current=kpi_source[(kpi_source["_perf_year"]==int(selected_year))&(kpi_source["_perf_month"]<=kpi_month_limit)].copy()
+            kpi_previous=kpi_source[(kpi_source["_perf_year"]==int(selected_year)-1)&(kpi_source["_perf_month"]<=kpi_month_limit)].copy()
+            kpi_customer_col=col(df,"customer")
+            if not sp_col:
+                st.warning("Kolom Sales Person Title tidak ditemukan di database.")
+            elif kpi_current.empty:
+                st.info(f"Belum ada data untuk tahun {int(selected_year)} pada cakupan yang dipilih.")
+            else:
+                def _kpi_normalize_text(series):
+                    return series.astype("string").str.strip().replace({"":"(Tidak tercantum)","None":"(Tidak tercantum)","nan":"(Tidak tercantum)","<NA>":"(Tidak tercantum)"}).fillna("(Tidak tercantum)")
+                for _kpi_frame in (kpi_current,kpi_previous):
+                    _kpi_frame["_kpi_salesperson"]=_kpi_normalize_text(_kpi_frame[sp_col])
+                    _kpi_frame["_kpi_principal"]=_kpi_normalize_text(_kpi_frame[principal_col])
+                kpi_sales=kpi_current.groupby("_kpi_salesperson",dropna=False).agg(Actual_Tahunan=("_perf_sales","sum"),Target_Tahunan=("_perf_target","sum"),Bulan_Data=("_perf_month","nunique")).reset_index().rename(columns={"_kpi_salesperson":"Sales Person Title"})
+                kpi_sales["A/T Tahunan (%)"]=kpi_sales["Actual_Tahunan"].div(kpi_sales["Target_Tahunan"].replace(0,float("nan")))*100
+                kpi_principal=kpi_current[kpi_current["_kpi_principal"]!="(Tidak tercantum)"].groupby(["_kpi_salesperson","_kpi_principal"],dropna=False).agg(Actual=("_perf_sales","sum"),Target=("_perf_target","sum")).reset_index()
+                kpi_principal["_eligible"]=kpi_principal["Target"]>0
+                kpi_principal["_on_target"]=kpi_principal["_eligible"]&(kpi_principal["Actual"]>=kpi_principal["Target"])
+                kpi_principal_summary=kpi_principal.groupby("_kpi_salesperson",dropna=False).agg(Principal_On_Target=("_on_target","sum"),Total_Principal=("_eligible","sum")).reset_index().rename(columns={"_kpi_salesperson":"Sales Person Title"})
+                kpi_principal_summary["Principal On Target (%)"]=kpi_principal_summary["Principal_On_Target"].div(kpi_principal_summary["Total_Principal"].replace(0,float("nan")))*100
+                kpi_sales=kpi_sales.merge(kpi_principal_summary,on="Sales Person Title",how="left")
+                def _kpi_buying_relations(frame):
+                    if not kpi_customer_col:
+                        return pd.Series(dtype="int64",name="Relasi Beli")
+                    _buying=frame.loc[frame["_perf_sales"]>0,["_kpi_salesperson",kpi_customer_col]].copy()
+                    _buying["_kpi_customer"]=_kpi_normalize_text(_buying[kpi_customer_col])
+                    _buying=_buying[_buying["_kpi_customer"]!="(Tidak tercantum)"]
+                    return _buying.groupby("_kpi_salesperson",dropna=False)["_kpi_customer"].nunique().rename("Relasi Beli")
+                kpi_current_relations=_kpi_buying_relations(kpi_current).rename("Relasi Beli Tahun Ini").rename_axis("Sales Person Title").reset_index()
+                kpi_previous_relations=_kpi_buying_relations(kpi_previous).rename("Relasi Beli Tahun Lalu").rename_axis("Sales Person Title").reset_index()
+                kpi_sales=kpi_sales.merge(kpi_current_relations,on="Sales Person Title",how="left").merge(kpi_previous_relations,on="Sales Person Title",how="left")
+                for _count_col in ["Principal_On_Target","Total_Principal","Relasi Beli Tahun Ini","Relasi Beli Tahun Lalu"]:
+                    if _count_col in kpi_sales.columns:
+                        kpi_sales[_count_col]=pd.to_numeric(kpi_sales[_count_col],errors="coerce").fillna(0).astype(int)
+                kpi_sales["Growth Relasi Beli (Jumlah)"]=kpi_sales["Relasi Beli Tahun Ini"]-kpi_sales["Relasi Beli Tahun Lalu"]
+                kpi_sales["Growth Relasi Beli (%)"]=kpi_sales.apply(lambda row:(row["Growth Relasi Beli (Jumlah)"]/row["Relasi Beli Tahun Lalu"]*100) if row["Relasi Beli Tahun Lalu"]>0 else (0.0 if row["Relasi Beli Tahun Ini"]==0 else float("nan")),axis=1)
+                kpi_sales=kpi_sales.rename(columns={"Principal_On_Target":"Principal On Target","Total_Principal":"Total Principal"}).sort_values("A/T Tahunan (%)",ascending=False,na_position="last").reset_index(drop=True)
+                kpi_display=kpi_sales[["Sales Person Title","Actual_Tahunan","Target_Tahunan","A/T Tahunan (%)","Principal On Target","Total Principal","Principal On Target (%)","Relasi Beli Tahun Ini","Relasi Beli Tahun Lalu","Growth Relasi Beli (Jumlah)","Growth Relasi Beli (%)","Bulan_Data"]].rename(columns={"Actual_Tahunan":"Actual Tahun Ini","Target_Tahunan":"Target Tahun Ini","Bulan_Data":"Bulan Data"})
+                st.caption(f"Periode: {int(selected_year)} dibanding {int(selected_year)-1}, bulan 1–{kpi_month_limit}. Actual/target dijumlahkan dari transaksi pada periode tersebut; pertumbuhan relasi = relasi unik tahun ini dikurangi tahun lalu. Tahun penuh memakai seluruh bulan yang tersedia di database.")
+                if not kpi_customer_col:
+                    st.warning("Kolom Customer Name tidak tersedia; KPI Growth Relasi Beli belum bisa dihitung.")
+                st.dataframe(kpi_display,width="stretch",hide_index=True,column_config={"A/T Tahunan (%)":st.column_config.NumberColumn(format="%.1f%%"),"Principal On Target (%)":st.column_config.NumberColumn(format="%.1f%%"),"Growth Relasi Beli (%)":st.column_config.NumberColumn(format="%.1f%%")})
+                st.download_button("⬇ Unduh KPI Tahunan (.csv)",data=kpi_display.to_csv(index=False).encode("utf-8-sig"),file_name=f"kpi_tahunan_sales_person_{int(selected_year)}.csv",mime="text/csv",key="download_annual_sales_kpi")
         elif perf_view=="Monitoring Sales":
             st.markdown(f"#### {month_name} {int(selected_year)}")
             top=st.columns(4,gap="small")
