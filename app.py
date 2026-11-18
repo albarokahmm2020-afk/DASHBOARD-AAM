@@ -6768,8 +6768,90 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
 </script>'''
             st.components.v1.html(markup,height=height,scrolling=False)
 
-        perf_view=st.radio("Sub menu Performance Sales",["Monitoring Sales","Toserba","Customer di Bawah Rata-rata","Detail Customer"],horizontal=True,key="performance_view")
-        if perf_view=="Monitoring Sales":
+        perf_view=st.radio("Sub menu Performance Sales",["Monitoring Sales","Analisis Pivot","Toserba","Customer di Bawah Rata-rata","Detail Customer"],horizontal=True,key="performance_view")
+        if perf_view=="Analisis Pivot":
+            st.markdown("#### Analisis Pivot · Database")
+            st.caption("Atur header baris dan kolom, pilih parameter yang dihitung, lalu tentukan cara perhitungannya. Filter Bisnis Group, Sales Person, tahun, dan bulan di atas tetap berlaku.")
+            pivot_period=st.radio("Periode data",["Bulan terpilih","Kumulatif s.d. bulan terpilih","Semua bulan dalam tahun"],horizontal=True,key="performance_pivot_period")
+            if pivot_period=="Bulan terpilih":
+                pivot_source=month_df.copy()
+            elif pivot_period=="Kumulatif s.d. bulan terpilih":
+                pivot_source=ytd_df.copy()
+            else:
+                pivot_source=scoped.copy()
+
+            pivot_headers=[c for c in df.columns if c in pivot_source.columns and not str(c).startswith("_perf_")]
+            pivot_dimensions=[c for c in pivot_headers if c not in (sales_col,target_value_col)]
+            pivot_measures=[]
+            for _pivot_col in pivot_headers:
+                _pivot_label=str(_pivot_col).strip().casefold()
+                if any(_token in _pivot_label for _token in ("date","tanggal","year","tahun","month","bulan"," id","_id","code","kode","phone","telepon")):
+                    continue
+                _pivot_numeric=pd.to_numeric(pivot_source[_pivot_col],errors="coerce")
+                if _pivot_numeric.notna().any():
+                    pivot_measures.append(_pivot_col)
+            for _required_measure in (sales_col,target_value_col):
+                if _required_measure in pivot_headers and _required_measure not in pivot_measures:
+                    pivot_measures.append(_required_measure)
+
+            pivot_controls=st.columns([2,2,3,2],gap="small")
+            with pivot_controls[0]:
+                pivot_rows=st.multiselect("Header baris",pivot_dimensions,default=[principal_col] if principal_col in pivot_dimensions else [],key="performance_pivot_rows",placeholder="Pilih satu atau lebih header")
+            with pivot_controls[1]:
+                pivot_col_options=["(Tanpa kolom) "]+pivot_dimensions
+                pivot_column_choice=st.selectbox("Header kolom",pivot_col_options,index=0,key="performance_pivot_column")
+                pivot_column=None if pivot_column_choice=="(Tanpa kolom) " else pivot_column_choice
+            with pivot_controls[2]:
+                pivot_values=st.multiselect("Parameter hitung",pivot_measures,default=[c for c in (sales_col,target_value_col) if c in pivot_measures],key="performance_pivot_values",placeholder="Pilih parameter numerik")
+            with pivot_controls[3]:
+                pivot_aggregation=st.selectbox("Cara hitung",["Jumlah","Rata-rata","Minimum","Maksimum","Hitung nilai","Hitung unik"],key="performance_pivot_aggregation")
+
+            pivot_agg_functions={"Jumlah":"sum","Rata-rata":"mean","Minimum":"min","Maksimum":"max","Hitung nilai":"count","Hitung unik":"nunique"}
+            pivot_agg=pivot_agg_functions[pivot_aggregation]
+            if pivot_source.empty:
+                st.info("Tidak ada baris data untuk filter dan periode yang dipilih.")
+            elif not pivot_values:
+                st.info("Pilih minimal satu parameter hitung.")
+            elif not pivot_rows and not pivot_column:
+                st.info("Pilih minimal satu Header baris atau Header kolom agar hasil dapat dikelompokkan.")
+            else:
+                pivot_work=pivot_source.copy()
+                for _group_col in list(pivot_rows)+([pivot_column] if pivot_column else []):
+                    pivot_work[_group_col]=pivot_work[_group_col].astype("string").fillna("(Kosong)").replace({"":"(Kosong)"})
+                _group_fields=list(pivot_rows)+([pivot_column] if pivot_column else [])
+                _group_count=int(pivot_work[_group_fields].drop_duplicates().shape[0]) if _group_fields else 1
+                _column_count=int(pivot_work[pivot_column].nunique(dropna=False)) if pivot_column else 0
+                if _group_count>50000:
+                    st.warning(f"Kombinasi header menghasilkan {_group_count:,} grup. Pilih header yang lebih ringkas agar tabel tetap cepat dibuka.")
+                elif _column_count>120:
+                    st.warning(f"Header kolom memiliki {_column_count:,} nilai unik. Pilih header dengan kategori yang lebih sedikit untuk tampilan pivot yang mudah dibaca.")
+                else:
+                    st.caption(f"{len(pivot_source):,} baris transaksi · {pivot_period} · {_group_count:,} kombinasi kelompok")
+                    pivot_export_frames=[]
+                    for _measure in pivot_values:
+                        st.markdown(f"**{_measure} · {pivot_aggregation}**")
+                        if pivot_rows and pivot_column:
+                            pivot_work["_pivot_value"]=pd.to_numeric(pivot_work[_measure],errors="coerce")
+                            pivot_result=pivot_work.pivot_table(index=pivot_rows,columns=pivot_column,values="_pivot_value",aggfunc=pivot_agg,dropna=False,fill_value=0).reset_index()
+                            if isinstance(pivot_result.columns,pd.MultiIndex):
+                                pivot_result.columns=[" · ".join(str(part) for part in col_parts if str(part)!="") for col_parts in pivot_result.columns.to_flat_index()]
+                        elif pivot_rows:
+                            if pivot_aggregation in ("count","nunique"):
+                                _series=pivot_work.groupby(pivot_rows,dropna=False)[_measure].agg(pivot_agg)
+                            else:
+                                _series=pd.to_numeric(pivot_work[_measure],errors="coerce").groupby([pivot_work[col] for col in pivot_rows],dropna=False).agg(pivot_agg)
+                            pivot_result=_series.rename(f"{_measure} · {pivot_aggregation}").reset_index()
+                        else:
+                            if pivot_aggregation in ("count","nunique"):
+                                _summary=pivot_work.groupby(pivot_column,dropna=False)[_measure].agg(pivot_agg)
+                            else:
+                                _summary=pd.to_numeric(pivot_work[_measure],errors="coerce").groupby(pivot_work[pivot_column],dropna=False).agg(pivot_agg)
+                            pivot_result=_summary.rename(f"{_measure} · {pivot_aggregation}").rename_axis(pivot_column).reset_index()
+                        st.dataframe(pivot_result,width="stretch",hide_index=True)
+                        pivot_export_frames.append(pivot_result.assign(Parameter=_measure))
+                    _pivot_export=pd.concat(pivot_export_frames,ignore_index=True,sort=False) if pivot_export_frames else pd.DataFrame()
+                    st.download_button("⬇ Unduh hasil pivot (.csv)",data=_pivot_export.to_csv(index=False).encode("utf-8-sig"),file_name=f"pivot_performance_{int(selected_year)}_{int(selected_month):02d}.csv",mime="text/csv",key="download_performance_pivot")
+        elif perf_view=="Monitoring Sales":
             st.markdown(f"#### {month_name} {int(selected_year)}")
             top=st.columns(4,gap="small")
             monthly_metrics=[(f"Actual Gross · {month_name}",m_actual),(f"Target · {month_name}",m_target),("A/T",m_ach),("Deviasi",m_dev)]
