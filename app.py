@@ -5802,19 +5802,16 @@ elif main_section=="Report":
             st.dataframe(push_daily_df.drop(columns=["Metric"]),width="stretch",hide_index=True,column_config={"Target":st.column_config.NumberColumn(format="%,.0f"),"Actual":st.column_config.NumberColumn(format="%,.0f"),"A/T":st.column_config.NumberColumn(format="%.1f%%")})
 
         st.markdown("##### 3. Sales KUM Gross")
+        st.caption(f"Kumulatif transaksi tanggal 1–{report_date:%d/%m/%Y} · Bisnis Group: {daily_business_group}.")
         _report_sales_col=col(df,"sales"); _report_date_col=col(df,"date"); _report_target_value_col=col(df,"target_value")
         sales_kum_actual=0.0; sales_kum_target=0.0; dot_daily_sales_actual=0.0
         if _report_sales_col and _report_date_col:
             _report_sales_data=df.copy()
             _report_dates=pd.to_datetime(_report_sales_data[_report_date_col],errors="coerce")
             _report_period_mask=(_report_dates.dt.year.eq(report_date.year)&_report_dates.dt.month.eq(report_date.month)&_report_dates.dt.date.le(report_date))
-            _perf_daily_filter=settings.get("performance_filters",{})
             _report_bg_col=col(_report_sales_data,"business_group")
-            _report_sp_col=col(_report_sales_data,"salesperson")
-            _report_sp_values=_perf_daily_filter.get("salesperson",[])
             if daily_business_group!="Semua Bisnis Group" and _report_bg_col:
                 _report_period_mask &= _report_sales_data[_report_bg_col].astype(str).str.strip().eq(daily_business_group)
-            if _report_sp_values and _report_sp_col: _report_period_mask &= _report_sales_data[_report_sp_col].astype(str).isin(_report_sp_values)
             _report_sales_scope=_report_sales_data.loc[_report_period_mask]
             sales_kum_actual=float(pd.to_numeric(_report_sales_scope[_report_sales_col],errors="coerce").fillna(0).sum())
             _report_day_scope=_report_sales_data.loc[_report_period_mask & _report_dates.dt.date.eq(report_date)]
