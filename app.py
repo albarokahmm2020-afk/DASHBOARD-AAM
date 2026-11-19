@@ -3855,9 +3855,11 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
 </style>
 <div class='program-config-anchor'></div>
 """,unsafe_allow_html=True)
-    _program_config_save_status=None
-    _program_config_save_failed=False
-    with st.expander(f"⚙️ Konfigurasi Program · {_active_push_month}", expanded=False):
+    _program_config_saved_notice=st.session_state.pop("_program_config_save_notice",None)
+    _program_config_save_status=_program_config_saved_notice.get("message") if isinstance(_program_config_saved_notice,dict) else None
+    _program_config_save_failed=bool(_program_config_saved_notice.get("failed",False)) if isinstance(_program_config_saved_notice,dict) else False
+    _program_config_reopen_month=st.session_state.pop("_program_config_reopen_month",None)
+    with st.expander(f"⚙️ Konfigurasi Program · {_active_push_month}", expanded=_program_config_reopen_month==_active_push_month):
         st.caption("Pilih bulan transaksi, tahun, metric, dan filter masing-masing program untuk perhitungan Summary.")
         st.caption("Perubahan konfigurasi tersimpan otomatis dan akan dipulihkan saat dashboard dibuka kembali.")
         st.caption("Konfigurasi tersimpan otomatis di MongoDB Atlas untuk cabang aktif dan dipulihkan saat dashboard dibuka kembali.")
@@ -4136,6 +4138,9 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
             settings["program_config_by_month"] = _pbm_cfg2
             if save_settings(settings,notify=False):
                 _program_config_save_status=f"Konfigurasi Program Push · {_active_push_month} tersimpan dan sudah diverifikasi di MongoDB."
+                st.session_state["_program_config_save_notice"]={"message":_program_config_save_status,"failed":False}
+                st.session_state["_program_config_reopen_month"]=_active_push_month
+                st.rerun()
             else:
                 _program_config_save_status=st.session_state.get("_settings_sync_error","Konfigurasi gagal disimpan ke MongoDB.")
                 _program_config_save_failed=True
@@ -4158,6 +4163,9 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
                 st.session_state[f"filter_metric_{_pkey2}"]=_cfg_new[_prog]["metric"]
             if save_settings(settings,notify=False):
                 _program_config_save_status=f"Konfigurasi Program Push · {_active_push_month} tersimpan dan sudah diverifikasi di MongoDB."
+                st.session_state["_program_config_save_notice"]={"message":_program_config_save_status,"failed":False}
+                st.session_state["_program_config_reopen_month"]=_active_push_month
+                st.rerun()
             else:
                 _program_config_save_status=st.session_state.get("_settings_sync_error","Konfigurasi gagal disimpan ke MongoDB.")
                 _program_config_save_failed=True
