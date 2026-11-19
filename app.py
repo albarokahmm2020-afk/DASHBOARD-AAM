@@ -1126,7 +1126,7 @@ def _restore_drive_state():
         ))
     mongo_settings_loaded=False
     mongo_settings_load_failed=False
-    if use_operational_db:
+    if use_operational_db and st.session_state.get("_mongo_settings_restored_branch")!=ACTIVE_BRANCH_CODE:
         try:
             settings_from_legacy=False
             settings_payload=_operational_db_load(SETTINGS_DB_DOCUMENT_NAME,ACTIVE_BRANCH_CODE)
@@ -1153,9 +1153,14 @@ def _restore_drive_state():
             st.warning(f"Konfigurasi tidak dapat dimuat dari MongoDB Atlas; salinan lokal digunakan sementara. Jenis error: {type(exc).__name__}. Periksa MONGODB_URI dan akses jaringan Atlas.")
         if not mongo_settings_loaded and not mongo_settings_load_failed and SETTINGS_PATH.is_file():
             try:
-                _operational_db_save(SETTINGS_DB_DOCUMENT_NAME,SETTINGS_PATH.read_bytes(),ACTIVE_BRANCH_CODE)
+                _local_settings_payload=SETTINGS_PATH.read_bytes()
+                _operational_db_save(SETTINGS_DB_DOCUMENT_NAME,_local_settings_payload,ACTIVE_BRANCH_CODE)
+                if _operational_db_load(SETTINGS_DB_DOCUMENT_NAME,ACTIVE_BRANCH_CODE)!=_local_settings_payload:
+                    raise RuntimeError("Konfigurasi awal tidak cocok saat dibaca ulang dari MongoDB Atlas.")
             except Exception as exc:
                 st.warning(f"Konfigurasi lokal belum dapat disalin ke MongoDB Atlas. Detail: {exc}")
+        if not mongo_settings_load_failed:
+            st.session_state["_mongo_settings_restored_branch"]=ACTIVE_BRANCH_CODE
 
     if st.session_state.get("_drive_state_restored_branch")==ACTIVE_BRANCH_CODE:
         return
@@ -1222,6 +1227,8 @@ def save_settings(settings,notify=False):
             raise RuntimeError("MONGODB_URI belum dikonfigurasi.")
         if not _operational_db_save(SETTINGS_DB_DOCUMENT_NAME,payload,ACTIVE_BRANCH_CODE):
             raise RuntimeError("MongoDB Atlas tidak mengonfirmasi penyimpanan konfigurasi.")
+        if _operational_db_load(SETTINGS_DB_DOCUMENT_NAME,ACTIVE_BRANCH_CODE)!=payload:
+            raise RuntimeError("Konfigurasi tidak cocok saat dibaca ulang dari MongoDB Atlas.")
     except Exception as exc:
         detail=st.session_state.get("_operational_db_config_error")
         if not detail:
@@ -1232,6 +1239,7 @@ def save_settings(settings,notify=False):
         return False
     st.session_state.pop("_settings_sync_error",None)
     st.session_state["_settings_sync_backend"]="MongoDB Atlas"
+    st.session_state["_mongo_settings_restored_branch"]=ACTIVE_BRANCH_CODE
     if notify: st.session_state["_settings_sync_notice"]="success"
     return True
 settings=load_settings()
