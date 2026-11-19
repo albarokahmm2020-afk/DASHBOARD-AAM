@@ -997,6 +997,7 @@ def _drive_find_file(file_name,category,branch=None):
     response.raise_for_status()
     files=response.json().get("files",[])
     return files[0]["id"] if files else None
+
 def _drive_download_to_path(file_name,path,category,branch=None):
     from google.auth.transport.requests import AuthorizedSession
     file_id=_drive_find_file(file_name,category,branch)
@@ -2008,7 +2009,8 @@ def _apply_principal_breakdown_to_raw(raw_frame, allocations):
         expected_cells=_allocate_integer_amount(principal_total,cell_weights).tolist()
         remaining_cells=expected_cells[:]
         for group_key,indices in groups.items():
-            group_pid=tuple(group_key[index] for index in ([0,1,3,5] if "YEAR_ID" in alloc.columns and "MONTH_ID" in alloc.columns else [3,5]))            if group_pid!=pid: continue
+            group_pid=tuple(group_key[index] for index in ([0,1,3,5] if "YEAR_ID" in alloc.columns and "MONTH_ID" in alloc.columns else [3,5]))
+            if group_pid!=pid: continue
             item_total=sum(int(ho_values.loc[idx]) for idx in indices)
             item_cells=_allocate_integer_capped(item_total,cell_weights,remaining_cells)
             remaining_cells=[remaining_cells[i]-int(item_cells.iloc[i]) for i in range(len(remaining_cells))]
@@ -3007,7 +3009,8 @@ def _google_drive_monthly_files(root_folder_id, branch_code, account_fingerprint
         if suffix==".xlsx":
             period=Path(name).stem.upper().replace(f"DATABASE_PUSH_{branch_code}_", "")
             period_parts=period.split("_")
-            if (                len(period_parts)!=2
+            if (
+                len(period_parts)!=2
                 or not all(part.isdigit() for part in period_parts)
                 or len(period_parts[0])!=4
                 or not 1<=int(period_parts[1])<=12
@@ -4006,7 +4009,8 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
             _weekly_week_key=f"pbm2_weekly_week_{_active_push_month}_{key(_p).replace(' ','_')}"
             _saved_weekly_week=int(_prog_cfg2(_p,"weekly_week",1) or 1)
             _sync_config_widget(_weekly_week_key,_saved_weekly_week)
-            _nweekly_week=st.selectbox("Week actual acuan",[1,2,3,4],                                       index=[1,2,3,4].index(_saved_weekly_week if _saved_weekly_week in [1,2,3,4] else 1),
+            _nweekly_week=st.selectbox("Week actual acuan",[1,2,3,4],
+                                       index=[1,2,3,4].index(_saved_weekly_week if _saved_weekly_week in [1,2,3,4] else 1),
                                        key=_weekly_week_key,
                                        format_func=lambda value:f"Week {value}",
                                        help="Actual mingguan dan analisa Summary dihitung dari tanggal yang ditandai pada minggu ini di Overview Calendar.")
@@ -5005,7 +5009,8 @@ if main_section=="Menu Insentif":
             non_chw[tgt_c]   = pd.to_numeric(non_chw[tgt_c],  errors="coerce").fillna(0)
             act_nc = float(non_chw[non_chw[sales_c]>0][sales_c].sum())
             tgt_nc = float(non_chw[tgt_c].sum())
-            at_nc  = round(act_nc/tgt_nc*100,1) if tgt_nc>0 else 0.0            param1_key = {
+            at_nc  = round(act_nc/tgt_nc*100,1) if tgt_nc>0 else 0.0
+            param1_key = {
                 "SUPV":    "1. % A/T Gross Sales Cabang (Non Toserba)",
                 "ALL_REG": "1. % A/T Gross Sales Rayon (Non Toserba)",
                 "MOD":     "1. % A/T Gross Sales Rayon",
@@ -5993,6 +5998,9 @@ elif main_section=="Report":
         _monthly_item_changes=pd.DataFrame(columns=["POT","Relasi","Item","Bulan Sebelumnya","Bulan Dipilih","Perubahan"])
         _monthly_previous_period=pd.Period(year=int(monthly_year),month=int(monthly_month),freq="M")-1
         _monthly_relation_changes=pd.DataFrame(columns=["POT","Relasi","Bulan Sebelumnya","Bulan Dipilih","Perubahan","Perubahan (%)"])
+Warning: truncated output (original token count: 21007)
+Total output lines: 1000
+
         if _monthly_principal_col and _monthly_customer_col:
             _monthly_item_values=pd.Series("",index=df.index,dtype="string")
             if _monthly_product_col:
@@ -6004,7 +6012,8 @@ elif main_section=="Report":
                     _monthly_has_both=_monthly_item_codes.ne("")&_monthly_item_values.ne("")&_monthly_item_codes.str.casefold().ne(_monthly_item_values.str.casefold())
                     _monthly_item_values=_monthly_item_values.where(~_monthly_has_both,_monthly_item_codes+" · "+_monthly_item_values)
             _relation_sales=pd.DataFrame({
-                "POT":df[_monthly_principal_col].astype("string").str.strip(),                "Relasi":df[_monthly_customer_col].astype("string").str.strip(),
+                "POT":df[_monthly_principal_col].astype("string").str.strip(),
+                "Relasi":df[_monthly_customer_col].astype("string").str.strip(),
                 "Item":_monthly_item_values,
                 "Sales":pd.to_numeric(df[_monthly_sales_col],errors="coerce").fillna(0),
                 "Period":_monthly_dates.dt.to_period("M"),
@@ -6423,86 +6432,7 @@ elif main_section=="Report":
             }
             try:
                 st.session_state[f"kasie_ppt_{_kasie_report_key}"]=generate_meeting_kasie_pptx(_kasie_template,_kasie_payload)
-                st.success("Slide Meeting Kasie berhasil dibuat sesuai periode dan filter yang dipilih.")
-            except Exception as _kasie_error:
-                st.error(f"PPT tidak berhasil dibuat: {_kasie_error}")
-        _kasie_ppt_data=st.session_state.get(f"kasie_ppt_{_kasie_report_key}")
-        if _kasie_ppt_data:
-            st.download_button("⬇ Export file PPT (.pptx)",data=_kasie_ppt_data,file_name=f"Slide_Meeting_Kasie_{key(_kasie_business_label).replace(' ','_')}_{int(_kasie_year)}_{int(_kasie_month):02d}.pptx",mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",key=f"download_kasie_{_kasie_report_key}")
-        st.stop()
-
-    st.caption("Upload template teks laporan, sistem akan mengisi variabel secara otomatis dari data aktual dashboard.")
-
-    # ── Upload template ───────────────────────────────────────────────────
-    report_col1, report_col2 = st.columns([2,3], gap="medium")
-
-    with report_col1:
-        st.markdown("#### 📄 Upload Template")
-        st.caption(
-            "Buat file .txt dengan variabel dalam format `{{NAMA_VARIABEL}}`. "
-            "Contoh: `{{ACTUAL_TOTAL}}`, `{{BULAN}}`, `{{ACHIEVEMENT}}`."
-        )
-        template_file = st.file_uploader(
-            "Upload template (.txt)",
-            type=["txt"],
-            key="report_template_upload",
-        )
-        st.markdown("---")
-        st.markdown("**Variabel yang tersedia ditampilkan di bawah area template dan hasil.**")
-
-        # Kumpulkan data aktual dari semua program aktif
-        _rpt_prog_data = []
-        _rpt_yr_c = next((c for c in df.columns if c.lower()=="year"),None)
-        _rpt_mn_c = next((c for c in df.columns if c.lower()=="month"),None)
-        _rpt_sales_c = col(df,"sales")
-        _rpt_cust_c  = col(df,"customer")
-        _rpt_sp_c    = col(df,"salesperson")
-        _rpt_pid_c   = col(df,"principal")
-
-        _now_ts  = pd.Timestamp.now()
-        _rpt_yr  = str(_now_ts.year)
-        _rpt_mn  = MONTHS.get(_now_ts.month, "")
-
-        # Total semua program aktif (dari session_state filter)
-        _rpt_total_act = 0; _rpt_total_tgt = 0
-        for _rp in programs:
-            _rp_sel = {k:st.session_state.get(f"filter_{k}_{key(_rp).replace(' ','_')}",
-                       PROGRAM_FILTER_DEFAULTS.get(_rp,{}).get(k,"All"))
-                       for k in ["year","month","principal_name","principal","channel_group","product_code","product"]}
-            _rp_sel["metric"] = "Total Relasi Beli Transaksi"
-            _rp_scoped, _rp_act, _rp_tgt, _rp_ach, _rp_dev, _ = calculate_program_kpi(_rp, _rp_sel)
-            _rpt_total_act += (_rp_act or 0)
-            _rpt_total_tgt += (_rp_tgt or 0)
-            _rp_ach_fmt = f"{_rp_ach:.1f}%" if _rp_ach else "—"
-            _rp_dev_fmt = f"{_rp_dev:,.0f}" if _rp_dev is not None else "—"
-            _rpt_prog_data.append({
-                "prog": _rp,
-                "label": program_label(_rp),
-                "actual": _rp_act or 0,
-                "target": _rp_tgt or 0,
-                "achievement": _rp_ach,
-                "deviation": _rp_dev,
-            })
-
-        _rpt_total_ach = _rpt_total_act/_rpt_total_tgt*100 if _rpt_total_tgt else None
-
-        # Build variabel dict
-        _vars = {
-            "BULAN":           _rpt_mn,
-            "TAHUN":           _rpt_yr,
-            "TANGGAL":         _now_ts.strftime("%d %B %Y"),
-            "TOTAL_ACTUAL":    f"{_rpt_total_act:,.0f}",
-            "TOTAL_TARGET":    f"{_rpt_total_tgt:,.0f}",
-            "TOTAL_ACHIEVEMENT": f"{_rpt_total_ach:.1f}%" if _rpt_total_ach else "—",
-            "TOTAL_DEVIATION": f"{_rpt_total_act-_rpt_total_tgt:,.0f}",
-            "JUMLAH_PROGRAM":  str(len(programs)),
-        }
-        # Per-program variables
-        for _idx, _pd in enumerate(_rpt_prog_data, 1):
-            _pfx = f"PROGRAM{_idx}"
-            _vars[f"{_pfx}_NAMA"]        = _pd["label"]
-            _vars[f"{_pfx}_ACTUAL"]      = f"{_pd['actual']:,.0f}"
-            _vars[f"{_pfx}_TARGET"]      = f"{_pd['target']:,.0f}"
+                st.success("Slide Meeting Kasie berhasil dib…1007 tokens truncated…      _vars[f"{_pfx}_TARGET"]      = f"{_pd['target']:,.0f}"
             _vars[f"{_pfx}_ACHIEVEMENT"] = f"{_pd['achievement']:.1f}%" if _pd['achievement'] else "—"
             _vars[f"{_pfx}_DEVIATION"]   = f"{_pd['deviation']:,.0f}" if _pd['deviation'] is not None else "—"
 
@@ -6992,6 +6922,9 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     _quad_pid=_quad_pid.rename(columns={principal_col:"Principal ID"})
                     _quad_pid["Principal ID"]=_quad_pid["Principal ID"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Tidak tercantum)").astype(str)
                     _quad_pid["Nama Principal"]=_quad_pid["Nama Principal"].astype("string").str.strip().replace({"":pd.NA,"None":pd.NA,"nan":pd.NA,"<NA>":pd.NA}).fillna("(Nama tidak tercantum)").astype(str)
+Warning: truncated output (original token count: 20238)
+Total output lines: 1000
+
                     _quad_pid["A/T %"]=_quad_pid["Actual"].div(_quad_pid["Target"].replace(0,float("nan")))*100
                     _quad_pid["Gap"]=_quad_pid["Actual"]-_quad_pid["Target"]
                     _growth_scope=perf[perf["_perf_year"].isin([2025,2026]) & perf["_perf_month"].le(int(selected_month))].copy()
@@ -7003,7 +6936,8 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
                     _growth_avg=_growth_monthly.pivot_table(index=principal_col,columns="_perf_year",values="_perf_sales",aggfunc="sum",fill_value=0).reindex(columns=[2025,2026],fill_value=0)
                     _growth_avg["Average 2025"]=_growth_avg[2025]/max(int(selected_month),1)
                     _growth_avg["Average 2026"]=_growth_avg[2026]/max(int(selected_month),1)
-                    _growth_avg["Growth Sales %"]=_growth_avg["Average 2026"].div(_growth_avg["Average 2025"].replace(0,float("nan"))).sub(1).mul(100)                    _growth_avg=_growth_avg[["Average 2025","Average 2026","Growth Sales %"]].reset_index().rename(columns={principal_col:"Principal ID"})
+                    _growth_avg["Growth Sales %"]=_growth_avg["Average 2026"].div(_growth_avg["Average 2025"].replace(0,float("nan"))).sub(1).mul(100)
+                    _growth_avg=_growth_avg[["Average 2025","Average 2026","Growth Sales %"]].reset_index().rename(columns={principal_col:"Principal ID"})
                     _quad_pid=_quad_pid.merge(_growth_avg,on="Principal ID",how="left")
                     def _compact_quadrant_amount(value):
                         value=float(value)
@@ -7432,17 +7366,7 @@ const result=numeric?an-bn:av.localeCompare(bv,undefined,{{numeric:true,sensitiv
             # Ringkasan trend Toserba historis sesuai filter aktif.
             _tsb_trend=(tsb_base.groupby("_perf_month").agg(ACT=("_perf_sales","sum"),TGT=("_perf_target","sum"))
                         .reset_index().sort_values("_perf_month"))
-            _tsb_trend["AT"]=_tsb_trend["ACT"].div(_tsb_trend["TGT"].replace(0,float("nan")))*100
-            _tsb_recent=_tsb_trend[_tsb_trend["_perf_month"]<=int(selected_month)].tail(3)
-            _tsb_trend_ats=_tsb_recent["AT"].dropna().tolist()
-            _tsb_trend_dir=("naik" if _tsb_trend_ats[-1]>_tsb_trend_ats[-2] else "turun" if _tsb_trend_ats[-1]<_tsb_trend_ats[-2] else "stagnan") if len(_tsb_trend_ats)>=2 else "belum cukup data"
-            _tsb_fot=int(((_tsb_trend["_perf_month"]<=int(selected_month))&(_tsb_trend["TGT"]>0)&(_tsb_trend["ACT"]>=_tsb_trend["TGT"])).sum())
-            _tsb_trend_ytd=_tsb_trend[_tsb_trend["_perf_month"]<=int(selected_month)]
-            _tsb_best=_tsb_trend_ytd.loc[_tsb_trend_ytd["ACT"].idxmax()] if not _tsb_trend_ytd.empty else None
-            _tsb_best_sales=float(_tsb_best["ACT"]) if _tsb_best is not None else 0
-            _tsb_pid_rows=[]
-            for _pid in TOSERBA_PIDS:
-                _pid_data=tsb_month[tsb_month[principal_col].astype(str).str.upper().str.strip().eq(_pid)]
+            _tsb_trend["AT"]=_tsb…238 tokens truncated…nth[principal_col].astype(str).str.upper().str.strip().eq(_pid)]
                 _pa=float(_pid_data["_perf_sales"].sum()); _pt=float(_pid_data["_perf_target"].sum())
                 _tsb_pid_rows.append({"Principal ID":_pid,"ACT":_pa,"TGT":_pt,"AT":_pa/_pt*100 if _pt else 0,"DEV":_pa-_pt})
             _tsb_pid_frame=pd.DataFrame(_tsb_pid_rows)
@@ -8002,7 +7926,8 @@ elif page=="Summary Program":
                 fmt_summary(_summary_target_total,_summary_metric_type)
                 if _summary_same_unit and _summary_target_complete else ("Campuran" if not _summary_same_unit else "Belum lengkap"),
             )
-        with _summary_metrics[2]:            st.metric(
+        with _summary_metrics[2]:
+            st.metric(
                 "Achievement",
                 f"{_summary_total_achievement:,.1f}%" if _summary_total_achievement is not None else "—",
                 help="Tidak dihitung jika satuan program berbeda atau target belum lengkap.",
@@ -9001,7 +8926,8 @@ elif page=="Sasaran Kunjungan Harian per Sales Person Title":
                     _actual_labels=[f"ACTUAL · {program_label(prog).replace('RB ','').replace('SALES ','')}" for prog in programs]
                     col_cfg={
                         "Sales Person Title":st.column_config.TextColumn("Sales Person Title",disabled=True,width="medium"),
-                        "Relasi":st.column_config.TextColumn("Relasi",disabled=True,width="medium"),                        **{_history_labels[i]:st.column_config.TextColumn(_history_labels[i],disabled=True,width="medium",help=f"Rata-rata Sales Value Gross per bulan dari Januari sampai {MONTHS.get(int(month_value)-1,'belum tersedia')} {int(year_value)} untuk {program_label(prog)}.") for i,prog in enumerate(programs)},
+                        "Relasi":st.column_config.TextColumn("Relasi",disabled=True,width="medium"),
+                        **{_history_labels[i]:st.column_config.TextColumn(_history_labels[i],disabled=True,width="medium",help=f"Rata-rata Sales Value Gross per bulan dari Januari sampai {MONTHS.get(int(month_value)-1,'belum tersedia')} {int(year_value)} untuk {program_label(prog)}.") for i,prog in enumerate(programs)},
                         **{_actual_labels[i]:st.column_config.TextColumn(_actual_labels[i],disabled=True,width="small",help=f"✓ = ada transaksi pada bulan berjalan untuk {program_label(prog)}.") for i,prog in enumerate(programs)},
                         "Reason":st.column_config.TextColumn("Reason",help="Isi catatan / reason hasil kunjungan one-on-one dengan salesman",width="medium"),
                     }
