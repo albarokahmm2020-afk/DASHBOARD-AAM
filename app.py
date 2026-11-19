@@ -3855,10 +3855,12 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
 </style>
 <div class='program-config-anchor'></div>
 """,unsafe_allow_html=True)
+    _program_config_save_status=None
+    _program_config_save_failed=False
     with st.expander(f"⚙️ Konfigurasi Program · {_active_push_month}", expanded=False):
         st.caption("Pilih bulan transaksi, tahun, metric, dan filter masing-masing program untuk perhitungan Summary.")
         st.caption("Perubahan konfigurasi tersimpan otomatis dan akan dipulihkan saat dashboard dibuka kembali.")
-        st.caption("Konfigurasi tersimpan di folder Google Drive operasional untuk cabang aktif, terpisah dari folder sumber database.")
+        st.caption("Konfigurasi tersimpan otomatis di MongoDB Atlas untuk cabang aktif dan dipulihkan saat dashboard dibuka kembali.")
         st.markdown("**Tambah Program Push untuk bulan ini**")
         with st.form(f"add_program_push_{key(_active_push_month).replace(' ','_')}",clear_on_submit=True):
             _new_program_name=st.text_input("Nama program baru",max_chars=70,placeholder="Contoh: PB PROGRAM BARU")
@@ -4132,8 +4134,11 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
         if _this_month_cfg2 != _cfg_new:
             _pbm_cfg2[_active_push_month] = _cfg_new
             settings["program_config_by_month"] = _pbm_cfg2
-            if save_settings(settings,notify=True):
-                st.rerun()
+            if save_settings(settings,notify=False):
+                _program_config_save_status=f"Konfigurasi Program Push · {_active_push_month} tersimpan dan sudah diverifikasi di MongoDB."
+            else:
+                _program_config_save_status=st.session_state.get("_settings_sync_error","Konfigurasi gagal disimpan ke MongoDB.")
+                _program_config_save_failed=True
 
         if st.button(f"💾 Simpan konfigurasi {_active_push_month}",
                      key=f"save_pbm2_{_active_push_month}", type="primary"):
@@ -4151,8 +4156,14 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
                 _bgv=_cfg_new[_prog]["business_group"]; st.session_state[f"filter_business_group_{_pkey2}"]=[] if _bgv=="All" else [_bgv]
                 _yv=_cfg_new[_prog]["year"]; st.session_state[f"filter_year_{_pkey2}"]=[] if _yv=="All" else [str(_yv)]
                 st.session_state[f"filter_metric_{_pkey2}"]=_cfg_new[_prog]["metric"]
-            save_settings(settings,notify=True)
-            st.rerun()
+            if save_settings(settings,notify=False):
+                _program_config_save_status=f"Konfigurasi Program Push · {_active_push_month} tersimpan dan sudah diverifikasi di MongoDB."
+            else:
+                _program_config_save_status=st.session_state.get("_settings_sync_error","Konfigurasi gagal disimpan ke MongoDB.")
+                _program_config_save_failed=True
+
+    if _program_config_save_status:
+        (st.error if _program_config_save_failed else st.success)(_program_config_save_status)
 
 for kind,label in [("year","Year"),("month","Month"),("principal","Principal ID"),("product","Product Description")]:
     if not col(df,kind): st.warning(f"Kolom {label} tidak ditemukan; filter ini tidak dapat diterapkan.")
