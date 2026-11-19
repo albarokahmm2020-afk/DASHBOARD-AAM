@@ -1239,7 +1239,7 @@ _settings_sync_error=st.session_state.get("_settings_sync_error")
 _settings_sync_notice=st.session_state.pop("_settings_sync_notice",None)
 if _settings_sync_notice=="success":
     _settings_sync_backend=st.session_state.pop("_settings_sync_backend","penyimpanan utama")
-    st.success(f"Konfigurasi berhasil disimpan dan disinkronkan ke {_settings_sync_backend}.")
+    st.success(f"Konfigurasi Program Push berhasil disimpan dan disinkronkan ke {_settings_sync_backend}.")
 elif _settings_sync_notice=="warning":
     st.warning(st.session_state.get("_settings_sync_error","Konfigurasi hanya tersimpan secara lokal."))
 elif _settings_sync_notice=="error":
@@ -4124,7 +4124,8 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
         if _this_month_cfg2 != _cfg_new:
             _pbm_cfg2[_active_push_month] = _cfg_new
             settings["program_config_by_month"] = _pbm_cfg2
-            save_settings(settings)
+            if save_settings(settings,notify=True):
+                st.rerun()
 
         if st.button(f"💾 Simpan konfigurasi {_active_push_month}",
                      key=f"save_pbm2_{_active_push_month}", type="primary"):
