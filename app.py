@@ -4365,7 +4365,19 @@ def auto_target_allocation(program,selected,basis,total_target):
             history_by_key[title_key]=history_by_key.get(title_key,0.0)+max(0.0,float(value))
     denominator=float(sum(history_by_key.values()))
     if denominator>0:
-        allocation={title:total_target*value/denominator for title,value in history_by_key.items()}
+        if metric=="Total Sales":
+            allocation={title:total_target*value/denominator for title,value in history_by_key.items()}
+        else:
+            # Relation targets are counts. Allocate whole units with the
+            # largest-remainder method so each title and the program total
+            # agree with the integer values shown in the table.
+            target_units=max(0,int(math.floor(total_target+0.5)))
+            quotas={title:target_units*value/denominator for title,value in history_by_key.items()}
+            allocation={title:int(math.floor(quota)) for title,quota in quotas.items()}
+            remaining=target_units-sum(allocation.values())
+            ranked=sorted(quotas,key=lambda title:(-(quotas[title]-allocation[title]),title))
+            for title in ranked[:remaining]:
+                allocation[title]+=1
     else:
         allocation={}
     _AUTO_TARGET_ALLOCATION_CACHE[cache_key]=allocation
@@ -4388,7 +4400,7 @@ def _program_title_target_overrides(program,selected):
             continue
         title=str(title).strip()
         if title and math.isfinite(amount) and amount>=0:
-            cleaned[title]=amount
+            cleaned[title]=amount if selected.get("metric")=="Total Sales" else float(math.floor(amount+0.5))
     return cleaned
 
 def target_for(scoped,program,selected,title=None,require_explicit=()):
@@ -8334,7 +8346,10 @@ elif page=="Program by Sales Person Title":
                             st.error(f"Sales Person Title duplikat setelah normalisasi: {_target_title}.")
                             _invalid_title_targets=True
                             break
-                        _new_title_overrides[_target_title]=_target_value
+                        _new_title_overrides[_target_title]=(
+                            _target_value if selected["metric"]=="Total Sales"
+                            else float(math.floor(_target_value+0.5))
+                        )
                     if _invalid_title_targets:
                         st.error("Target harus berupa angka nol atau lebih, dan setiap Sales Person Title harus unik.")
                     else:
