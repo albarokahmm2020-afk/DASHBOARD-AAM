@@ -1061,6 +1061,83 @@ def _operational_db_load(file_name, branch=None):
         row=client["dashboard_aam"]["operational_files"].find_one({"_id":document_id},{"payload":1})
     return bytes(row["payload"]) if row and row.get("payload") is not None else None
 
+def _merge_settings_three_way(base, submitted, latest):
+    """Merge this session's edits into the newest MongoDB settings snapshot."""
+    import copy
+    if submitted == base:
+        return copy.deepcopy(latest)
+    if latest == base or submitted == latest:
+        return copy.deepcopy(submitted)
+    if isinstance(base,dict) and isinstance(submitted,dict) and isinstance(latest,dict):
+        merged={}
+        for name in set(base)|set(submitted)|set(latest):
+            has_base=name in base
+            has_submitted=name in submitted
+            has_latest=name in latest
+            if not has_submitted:
+                if not has_base:
+                    if has_latest: merged[name]=copy.deepcopy(latest[name])
+                elif has_latest and latest[name]!=base[name]:
+                    # A concurrent session changed this field; don't erase it
+                    # with a stale deletion from this session.
+                    merged[name]=copy.deepcopy(latest[name])
+                continue
+            if not has_base:
+                # Keep a concurrent insertion if both sessions added the same key.
+                merged[name]=copy.deepcopy(latest[name] if has_latest else submitted[name])
+                continue
+            if not has_latest:
+                if submitted[name]!=base[name]:
+                    merged[name]=copy.deepcopy(submitted[name])
+                continue
+            merged[name]=_merge_settings_three_way(base[name],submitted[name],latest[name])
+        return merged
+    # For simultaneous edits to the same value, the most recent save wins.
+    return copy.deepcopy(submitted)
+
+def _operational_db_save_settings(file_name, submitted, base, branch=None, retries=8):
+    """Atomically merge a settings edit with the newest branch document."""
+    uri=_operational_db_url()
+    if not uri:
+        raise RuntimeError("MONGODB_URI belum dikonfigurasi.")
+    from datetime import datetime, timezone
+    from pymongo import MongoClient
+    from pymongo.errors import DuplicateKeyError
+    document_id=f"{branch or ACTIVE_BRANCH_CODE}:{file_name}"
+    with MongoClient(uri,serverSelectionTimeoutMS=10000,connectTimeoutMS=10000,socketTimeoutMS=20000) as client:
+        collection=client["dashboard_aam"]["operational_files"]
+        for _attempt in range(retries):
+            current=collection.find_one({"_id":document_id},{"payload":1,"updated_at":1})
+            if current and current.get("payload") is not None:
+                latest=json.loads(bytes(current["payload"]).decode("utf-8"))
+                if not isinstance(latest,dict):
+                    raise ValueError("Format konfigurasi MongoDB Atlas bukan object JSON.")
+                merged=_merge_settings_three_way(base,submitted,latest)
+            else:
+                # First save for a branch keeps its complete local configuration.
+                merged=submitted
+            payload=json.dumps(merged,ensure_ascii=False,indent=2).encode("utf-8")
+            replacement={"_id":document_id,"payload":payload,"updated_at":datetime.now(timezone.utc)}
+            if current is None:
+                try:
+                    collection.insert_one(replacement)
+                    return payload,merged
+                except DuplicateKeyError:
+                    continue
+            condition={"_id":document_id}
+            if "updated_at" in current:
+                condition["updated_at"]=current["updated_at"]
+            else:
+                condition["updated_at"]={"$exists":False}
+            result=collection.replace_one(condition,replacement,upsert=False)
+            if result.matched_count:
+                saved=collection.find_one({"_id":document_id},{"payload":1})
+                if saved and bytes(saved.get("payload",b""))==payload:
+                    return payload,merged
+                # A second session saved after this write; retry against its
+                # latest document and merge this session's actual edits again.
+        raise RuntimeError("Konfigurasi berubah di sesi lain saat disimpan; coba simpan sekali lagi.")
+
 def _operational_db_delete(file_name, branch=None):
     uri=_operational_db_url()
     if not uri:
@@ -1217,19 +1294,23 @@ def load_settings():
     if not isinstance(payload,dict):
         st.error(f"Format {SETTINGS_PATH.name} tidak valid. File tidak akan ditimpa agar konfigurasi lama tetap aman.")
         st.stop()
+    import copy
+    st.session_state.setdefault(f"_settings_baseline_{ACTIVE_BRANCH_CODE}",copy.deepcopy(payload))
     return payload
 def save_settings(settings,notify=False):
     SETTINGS_PATH.parent.mkdir(parents=True,exist_ok=True)
-    payload=json.dumps(settings,ensure_ascii=False,indent=2).encode("utf-8")
-    SETTINGS_PATH.write_bytes(payload)
+    import copy
+    submitted=copy.deepcopy(settings)
+    baseline=copy.deepcopy(st.session_state.get(f"_settings_baseline_{ACTIVE_BRANCH_CODE}",submitted))
     try:
-        if not _operational_db_url():
-            raise RuntimeError("MONGODB_URI belum dikonfigurasi.")
-        if not _operational_db_save(SETTINGS_DB_DOCUMENT_NAME,payload,ACTIVE_BRANCH_CODE):
-            raise RuntimeError("MongoDB Atlas tidak mengonfirmasi penyimpanan konfigurasi.")
-        if _operational_db_load(SETTINGS_DB_DOCUMENT_NAME,ACTIVE_BRANCH_CODE)!=payload:
-            raise RuntimeError("Konfigurasi tidak cocok saat dibaca ulang dari MongoDB Atlas.")
+        payload,merged=_operational_db_save_settings(
+            SETTINGS_DB_DOCUMENT_NAME,submitted,baseline,ACTIVE_BRANCH_CODE,
+        )
+        SETTINGS_PATH.write_bytes(payload)
+        st.session_state[f"_settings_baseline_{ACTIVE_BRANCH_CODE}"]=copy.deepcopy(merged)
     except Exception as exc:
+        # Keep a local recovery copy, while never reporting it as synced.
+        SETTINGS_PATH.write_bytes(json.dumps(submitted,ensure_ascii=False,indent=2).encode("utf-8"))
         detail=st.session_state.get("_operational_db_config_error")
         if not detail:
             detail=f"Jenis error: {type(exc).__name__}. Periksa MONGODB_URI dan akses jaringan Atlas."
