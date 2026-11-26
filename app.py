@@ -4004,10 +4004,31 @@ div[data-testid='stElementContainer']:has(.program-config-anchor)
             _allocation_key=f"pbm2_target_basis_{_active_push_month}_{key(_p).replace(' ','_')}"
             _saved_allocation=_prog_cfg2(_p,"target_allocation_basis",_allocation_options[0])
             if _saved_allocation not in _allocation_options: _saved_allocation=_allocation_options[0]
+            _saved_title_overrides=_prog_cfg2(_p,"title_target_overrides",{})
+            if (_saved_allocation in {"Average 2026 (YTD)","Average 3 bulan terakhir"}
+                    and isinstance(_saved_title_overrides,dict) and _saved_title_overrides):
+                # Before manual title edits switched the allocation basis,
+                # saved per-title targets could coexist with an automatic
+                # basis and a stale program total. Preserve those explicit
+                # saved targets and migrate the config to Manual on this run.
+                _saved_allocation="Manual / upload per Sales Person Title"
             _sync_config_widget(_allocation_key,_saved_allocation)
             _target_basis=st.selectbox("Basis target per Sales Person Title",_allocation_options,
                                        index=_allocation_options.index(_saved_allocation),key=_allocation_key)
-            _saved_auto_total=_prog_cfg2(_p,"target_total",_monthly_config_target or 0)
+            if (_saved_allocation=="Manual / upload per Sales Person Title"
+                    and isinstance(_saved_title_overrides,dict) and _saved_title_overrides):
+                _saved_override_amounts=[]
+                for _saved_override_value in _saved_title_overrides.values():
+                    try: _saved_override_amount=float(_saved_override_value)
+                    except (TypeError,ValueError): continue
+                    if math.isfinite(_saved_override_amount) and _saved_override_amount>=0:
+                        _saved_override_amounts.append(
+                            _saved_override_amount if _nmetric=="Total Sales"
+                            else float(math.floor(_saved_override_amount+0.5))
+                        )
+                _saved_auto_total=sum(_saved_override_amounts)
+            else:
+                _saved_auto_total=_prog_cfg2(_p,"target_total",_monthly_config_target or 0)
             try: _saved_auto_total=float(_saved_auto_total or 0)
             except (TypeError,ValueError): _saved_auto_total=float(_monthly_config_target or 0)
             _auto_total_key=f"pbm2_target_total_{_active_push_month}_{key(_p).replace(' ','_')}"
@@ -4406,14 +4427,7 @@ def _program_title_target_overrides(program,selected):
 def target_for(scoped,program,selected,title=None,require_explicit=()):
     params={**selected,"program":program}
     if title is not None: params["salesperson"]=str(title)
-    allocation_basis=selected.get("target_allocation_basis","Manual / upload per Sales Person Title")
-    uses_auto_allocation=allocation_basis in {"Average 2026 (YTD)","Average 3 bulan terakhir"}
-    # Saved title overrides are manual targets. If the program is configured
-    # for an automatic basis, the configured total must remain authoritative;
-    # otherwise stale per-title values can make the Summary revert to an old
-    # total while the configuration displays the new one.
-    overrides=({} if selected.get("_skip_title_target_overrides") or uses_auto_allocation
-               else _program_title_target_overrides(program,selected))
+    overrides={} if selected.get("_skip_title_target_overrides") else _program_title_target_overrides(program,selected)
     if title is None and overrides:
         baseline=title_performance(scoped,program,{**selected,"_skip_title_target_overrides":True})
         if baseline.empty:
@@ -4430,7 +4444,8 @@ def target_for(scoped,program,selected,title=None,require_explicit=()):
         for override_title,value in overrides.items():
             if key(override_title)==title_key:
                 return value,"Target disesuaikan pada konfigurasi"
-    if uses_auto_allocation:
+    allocation_basis=selected.get("target_allocation_basis","Manual / upload per Sales Person Title")
+    if allocation_basis in {"Average 2026 (YTD)","Average 3 bulan terakhir"}:
         try: allocation_total=float(selected.get("target_total",0) or 0)
         except (TypeError,ValueError): allocation_total=0.0
         if title is None:
@@ -4527,12 +4542,7 @@ def title_performance(scoped,program,selected):
                              "A/T (%)":actual/tgt*100 if actual is not None and tgt else None,
                              "Deviation":actual-tgt if actual is not None else None})
                 seen.add(key(title))
-    _saved_title_overrides=(
-        _program_title_target_overrides(program,selected)
-        if allocation_basis not in {"Average 2026 (YTD)","Average 3 bulan terakhir"}
-        else {}
-    )
-    for title in _saved_title_overrides:
+    for title in _program_title_target_overrides(program,selected):
         if key(title) in seen:
             continue
         actual=0
