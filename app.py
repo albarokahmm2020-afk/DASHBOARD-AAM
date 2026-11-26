@@ -4406,7 +4406,14 @@ def _program_title_target_overrides(program,selected):
 def target_for(scoped,program,selected,title=None,require_explicit=()):
     params={**selected,"program":program}
     if title is not None: params["salesperson"]=str(title)
-    overrides={} if selected.get("_skip_title_target_overrides") else _program_title_target_overrides(program,selected)
+    allocation_basis=selected.get("target_allocation_basis","Manual / upload per Sales Person Title")
+    uses_auto_allocation=allocation_basis in {"Average 2026 (YTD)","Average 3 bulan terakhir"}
+    # Saved title overrides are manual targets. If the program is configured
+    # for an automatic basis, the configured total must remain authoritative;
+    # otherwise stale per-title values can make the Summary revert to an old
+    # total while the configuration displays the new one.
+    overrides=({} if selected.get("_skip_title_target_overrides") or uses_auto_allocation
+               else _program_title_target_overrides(program,selected))
     if title is None and overrides:
         baseline=title_performance(scoped,program,{**selected,"_skip_title_target_overrides":True})
         if baseline.empty:
@@ -4423,8 +4430,7 @@ def target_for(scoped,program,selected,title=None,require_explicit=()):
         for override_title,value in overrides.items():
             if key(override_title)==title_key:
                 return value,"Target disesuaikan pada konfigurasi"
-    allocation_basis=selected.get("target_allocation_basis","Manual / upload per Sales Person Title")
-    if allocation_basis in {"Average 2026 (YTD)","Average 3 bulan terakhir"}:
+    if uses_auto_allocation:
         try: allocation_total=float(selected.get("target_total",0) or 0)
         except (TypeError,ValueError): allocation_total=0.0
         if title is None:
@@ -4521,7 +4527,12 @@ def title_performance(scoped,program,selected):
                              "A/T (%)":actual/tgt*100 if actual is not None and tgt else None,
                              "Deviation":actual-tgt if actual is not None else None})
                 seen.add(key(title))
-    for title in _program_title_target_overrides(program,selected):
+    _saved_title_overrides=(
+        _program_title_target_overrides(program,selected)
+        if allocation_basis not in {"Average 2026 (YTD)","Average 3 bulan terakhir"}
+        else {}
+    )
+    for title in _saved_title_overrides:
         if key(title) in seen:
             continue
         actual=0
@@ -8356,6 +8367,7 @@ elif page=="Program by Sales Person Title":
                         _program_month_config=settings.setdefault("program_config_by_month",{}).setdefault(_active_config_month,{}).setdefault(program,{})
                         _program_month_config["title_target_overrides"]=_new_title_overrides
                         _program_month_config["target_total"]=float(sum(_new_title_overrides.values()))
+                        _program_month_config["target_allocation_basis"]="Manual / upload per Sales Person Title"
                         save_settings(settings,notify=True)
                         st.session_state["_title_target_saved_notice"]=True
                         st.rerun()
