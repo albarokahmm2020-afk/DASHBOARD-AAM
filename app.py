@@ -2052,12 +2052,39 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
                 channel_share=float(channel_weight)/seller_total
                 base=int(channel_targets.loc[channel])
                 rows.append({"YEAR_ID":int(year),"MONTH_ID":int(month),"BUSINESS_GROUP":str(selected_business_group or (hist[business_col].dropna().iloc[0] if business_col and hist[business_col].notna().any() else "")),"PRINCIPLE ID":pid,"PRINCIPAL_NAME":str(target.get("PRINCIPAL_NAME",pid)),"SALESPERSON_POSITION":seller,"KONTRIBUSI_SALESPERSON_%":seller_share*100,"TARGET_SALESPERSON":seller_target,"CHANNEL_OUTLET_GROUP":channel,"KONTRIBUSI_CHANNEL_%":channel_share*100,"TARGET_PRINCIPAL":total,"AVERAGE_3_BULAN":float(channel_weight)/3,"AVERAGE_3_BULAN_SALESPERSON":seller_average_by_name.get(str(seller),0.0),"PORSI_%":float(channel_weight)/denom*100,"TARGET_BREAKDOWN":base,"ADJUST_TARGET":0,"TARGET_CABANG":base})
+    # Ensure each eligible seller gets at least one unit when the total target
+    # can cover all eligible sellers, without changing any Principal total.
+    if rows:
+        for seller in eligible_seller_names:
+            seller_rows=[row for row in rows if row["SALESPERSON_POSITION"]==seller]
+            if sum(int(row["TARGET_BREAKDOWN"]) for row in seller_rows)>0:
+                continue
+            recipient=None; donor=None
+            for target_row in seller_rows:
+                candidates=[
+                    row for row in rows
+                    if row["PRINCIPLE ID"]==target_row["PRINCIPLE ID"]
+                    and row["SALESPERSON_POSITION"]!=seller
+                    and int(row["TARGET_BREAKDOWN"])>1
+                ]
+                if candidates:
+                    recipient=target_row
+                    donor=max(candidates,key=lambda row:int(row["TARGET_BREAKDOWN"]))
+                    break
+            if recipient is not None and donor is not None:
+                donor["TARGET_BREAKDOWN"]-=1; donor["TARGET_CABANG"]-=1
+                recipient["TARGET_BREAKDOWN"]+=1; recipient["TARGET_CABANG"]+=1
+    sellers_without_positive_target=[
+        seller for seller in eligible_seller_names
+        if not any(row["SALESPERSON_POSITION"]==seller and int(row["TARGET_BREAKDOWN"])>0 for row in rows)
+    ]
     result=pd.DataFrame(rows,columns=["YEAR_ID","MONTH_ID","BUSINESS_GROUP","PRINCIPLE ID","PRINCIPAL_NAME","SALESPERSON_POSITION","KONTRIBUSI_SALESPERSON_%","TARGET_SALESPERSON","CHANNEL_OUTLET_GROUP","KONTRIBUSI_CHANNEL_%","TARGET_PRINCIPAL","AVERAGE_3_BULAN","AVERAGE_3_BULAN_SALESPERSON","PORSI_%","TARGET_BREAKDOWN","ADJUST_TARGET","TARGET_CABANG"])
     result.attrs["skipped_no_history"]=skipped_no_history
     result.attrs["skipped_no_weight"]=skipped_no_weight
     result.attrs["fallback_ids"]=fallback_ids
     result.attrs["unmapped_sellers"]=unmapped_sellers
     result.attrs["seller_average_3_month"]=seller_average_by_name
+    result.attrs["sellers_without_positive_target"]=sellers_without_positive_target
     result.attrs["mapped_sellers_without_history"]=mapped_sellers_without_history
     result.attrs["mapped_sellers_without_channel_match"]=mapped_sellers_without_channel_match
     result.attrs["unmatched_channel_assignments"]=unmatched_channel_assignments
@@ -3765,6 +3792,13 @@ if main_section=="Breakdown Target":
                     if _bt_skipped_history or _bt_skipped_weight:
                         _bt_skipped_ids=sorted(set(_bt_skipped_history+_bt_skipped_weight))
                         st.warning(f"{len(_bt_skipped_ids):,} Principal ID dilewati karena tidak memiliki riwayat atau bobot 3 bulan: {', '.join(_bt_skipped_ids[:20])}{'…' if len(_bt_skipped_ids)>20 else ''}. Principal lain tetap diproses.")
+                    _bt_no_positive_target=st.session_state["_bt_allocations"].attrs.get("sellers_without_positive_target",[])
+                    if _bt_no_positive_target:
+                        st.warning(
+                            f"{len(_bt_no_positive_target):,} Sales Person Title ber-riwayat belum bisa mendapat target positif "
+                            f"karena total target lebih kecil daripada jumlah posisi: "
+                            f"{', '.join(_bt_no_positive_target[:20])}{'…' if len(_bt_no_positive_target)>20 else ''}."
+                        )
                 except Exception as _bt_err:
                     st.session_state.pop("_bt_allocations",None)
                     st.session_state.pop("_bt_generated_target_signature",None)
