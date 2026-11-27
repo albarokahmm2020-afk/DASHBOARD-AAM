@@ -2061,11 +2061,16 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
                 continue
             recipient=None; donor=None
             for target_row in seller_rows:
+                current_seller_totals={}
+                for row in rows:
+                    position=row["SALESPERSON_POSITION"]
+                    current_seller_totals[position]=current_seller_totals.get(position,0)+int(row["TARGET_BREAKDOWN"])
                 candidates=[
                     row for row in rows
                     if row["PRINCIPLE ID"]==target_row["PRINCIPLE ID"]
                     and row["SALESPERSON_POSITION"]!=seller
-                    and int(row["TARGET_BREAKDOWN"])>1
+                    and int(row["TARGET_BREAKDOWN"])>0
+                    and current_seller_totals.get(row["SALESPERSON_POSITION"],0)>1
                 ]
                 if candidates:
                     recipient=target_row
