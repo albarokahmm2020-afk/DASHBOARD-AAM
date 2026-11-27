@@ -1913,12 +1913,9 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     channel_col=col(history_frame,"channel_group"); date_col=col(history_frame,"date")
     sales_col=col(history_frame,"sales")
     business_col=col(history_frame,"business_group")
-    if not channel_mapping:
-        raise ValueError("Unggah file mapping assignment untuk menentukan channel per Sales Person Title.")
+    channel_mapping=channel_mapping or {}
     business_key=key(selected_business_group or "").casefold()
     mapped_sellers={position for business,position in channel_mapping if business==business_key}
-    if not mapped_sellers:
-        raise ValueError(f"Tidak ada mapping channel aktif untuk Business Group {selected_business_group}.")
     if not all([title_col,principal_col,channel_col,date_col]):
         raise ValueError("Riwayat wajib memuat tanggal, Sales Person Title, Principal ID, dan Channel Outlet Group.")
     if not sales_col:
@@ -1938,8 +1935,11 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     hist["_channel"]=hist[channel_col].astype("string").str.strip()
     hist=hist[hist["_pid"].notna()&hist["_seller"].notna()&hist["_channel"].notna()].copy()
     hist["_weight"]=pd.to_numeric(hist[sales_col],errors="coerce").fillna(0).clip(lower=0)
+    # Only titles with actual positive sales in the three-month window are eligible.
+    hist=hist[hist["_weight"]>0].copy()
     if hist.empty:
         raise ValueError("Tidak ada riwayat tiga bulan pada Business Group ini untuk membagi target ke Sales Person dan Channel.")
+    history_average_totals=hist.groupby("_seller",observed=True)["_weight"].sum()
     history_sellers=hist["_seller"].dropna().drop_duplicates()
     history_seller_keys={key(seller).casefold() for seller in history_sellers}
     history_seller_labels={key(seller).casefold():str(seller) for seller in history_sellers}
@@ -1967,12 +1967,20 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
             for channel_key in dict.fromkeys(key(value).casefold() for value in mapped_channels)
             if channel_key in seller_database_channels
         )
+    mapped_sellers_without_channel_match=sorted(
+        (mapped_sellers&history_seller_keys)-{
+            seller for seller,channels in matched_channels_by_seller.items() if channels
+        }
+    )
+    # Keep every seller with recent sales. Prefer configured channels; if the
+    # assignment is missing or does not match database labels, use their own
+    # observed channels from the same three-month history.
+    for seller_key,channels_by_key in database_channels_by_seller.items():
+        if not matched_channels_by_seller.get(seller_key):
+            matched_channels_by_seller[seller_key]=tuple(channels_by_key.values())
     matching_sellers={seller for seller,channels in matched_channels_by_seller.items() if channels}
     if not matching_sellers:
-        raise ValueError(
-            f"Tidak ada SALES_CHANNEL pada mapping yang cocok dengan Channel_group database "
-            f"untuk Business Group {selected_business_group}."
-        )
+        raise ValueError("Tidak ada Sales Person Title dengan penjualan positif pada tiga bulan terakhir.")
     hist["_seller_key"]=hist["_seller"].map(lambda value:key(value).casefold())
     hist["_channel_key"]=hist["_channel"].map(lambda value:key(value).casefold())
     matched_channel_keys_by_seller={
@@ -1984,7 +1992,16 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
     for seller,channels in matched_channel_keys_by_seller.items():
         matched_history_mask|=hist["_seller_key"].eq(seller)&hist["_channel_key"].isin(channels)
     hist=hist.loc[matched_history_mask].copy()
-    mapped_sellers_without_channel_match=sorted((mapped_sellers&history_seller_keys)-matching_sellers)
+    eligible_seller_names=hist.drop_duplicates("_seller")["_seller"].tolist()
+    seller_history_totals=hist.groupby("_seller",observed=True)["_weight"].sum()
+    seller_average_by_key={
+        key(seller).casefold():float(total)/3.0
+        for seller,total in history_average_totals.items()
+    }
+    seller_average_by_name={
+        str(seller):seller_average_by_key.get(key(seller).casefold(),0.0)
+        for seller in eligible_seller_names
+    }
     rows=[]; skipped_no_history=[]; skipped_no_weight=[]; fallback_ids=[]
     for _,target in principal_targets.iterrows():
         pid=str(target["PRINCIPLE ID"]).strip(); total_value=pd.to_numeric(target["TARGET_PRINCIPAL"],errors="coerce"); total=int(math.floor(abs(float(total_value))+0.5)) if pd.notna(total_value) else 0
@@ -1994,11 +2011,17 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
             fallback_ids.append(pid)
             subset=hist
         seller_weights=subset.groupby("_seller",observed=True)["_weight"].sum().clip(lower=0)
+        # Every eligible title receives a row for each target principal. When a
+        # title has no sales for that principal, use its total three-month sales
+        # as the fallback weight instead of silently omitting the title.
+        seller_weights=seller_weights.reindex(eligible_seller_names,fill_value=0.0)
+        global_weights=seller_history_totals.reindex(eligible_seller_names,fill_value=0.0)
+        seller_weights=seller_weights.where(seller_weights>0,global_weights)
         seller_weights=seller_weights.loc[
             [seller for seller in seller_weights.index if key(seller).casefold() in matching_sellers]
         ]
         if seller_weights.empty:
-            raise ValueError(f"Tidak ada Sales Person Title yang memiliki pasangan channel database dan mapping aktif untuk Business Group {selected_business_group}.")
+            raise ValueError("Tidak ada Sales Person Title yang memiliki penjualan positif pada tiga bulan terakhir.")
         denom=float(seller_weights.sum())
         if denom<=0:
             seller_weights=pd.Series(1.0,index=seller_weights.index,dtype="float64")
@@ -2028,12 +2051,13 @@ def _prepare_principal_channel_breakdown(history_frame, year, month, principal_t
             for channel,channel_weight in channel_weights.items():
                 channel_share=float(channel_weight)/seller_total
                 base=int(channel_targets.loc[channel])
-                rows.append({"YEAR_ID":int(year),"MONTH_ID":int(month),"BUSINESS_GROUP":str(selected_business_group or (hist[business_col].dropna().iloc[0] if business_col and hist[business_col].notna().any() else "")),"PRINCIPLE ID":pid,"PRINCIPAL_NAME":str(target.get("PRINCIPAL_NAME",pid)),"SALESPERSON_POSITION":seller,"KONTRIBUSI_SALESPERSON_%":seller_share*100,"TARGET_SALESPERSON":seller_target,"CHANNEL_OUTLET_GROUP":channel,"KONTRIBUSI_CHANNEL_%":channel_share*100,"TARGET_PRINCIPAL":total,"AVERAGE_3_BULAN":float(channel_weight)/3,"PORSI_%":float(channel_weight)/denom*100,"TARGET_BREAKDOWN":base,"ADJUST_TARGET":0,"TARGET_CABANG":base})
-    result=pd.DataFrame(rows,columns=["YEAR_ID","MONTH_ID","BUSINESS_GROUP","PRINCIPLE ID","PRINCIPAL_NAME","SALESPERSON_POSITION","KONTRIBUSI_SALESPERSON_%","TARGET_SALESPERSON","CHANNEL_OUTLET_GROUP","KONTRIBUSI_CHANNEL_%","TARGET_PRINCIPAL","AVERAGE_3_BULAN","PORSI_%","TARGET_BREAKDOWN","ADJUST_TARGET","TARGET_CABANG"])
+                rows.append({"YEAR_ID":int(year),"MONTH_ID":int(month),"BUSINESS_GROUP":str(selected_business_group or (hist[business_col].dropna().iloc[0] if business_col and hist[business_col].notna().any() else "")),"PRINCIPLE ID":pid,"PRINCIPAL_NAME":str(target.get("PRINCIPAL_NAME",pid)),"SALESPERSON_POSITION":seller,"KONTRIBUSI_SALESPERSON_%":seller_share*100,"TARGET_SALESPERSON":seller_target,"CHANNEL_OUTLET_GROUP":channel,"KONTRIBUSI_CHANNEL_%":channel_share*100,"TARGET_PRINCIPAL":total,"AVERAGE_3_BULAN":float(channel_weight)/3,"AVERAGE_3_BULAN_SALESPERSON":seller_average_by_name.get(str(seller),0.0),"PORSI_%":float(channel_weight)/denom*100,"TARGET_BREAKDOWN":base,"ADJUST_TARGET":0,"TARGET_CABANG":base})
+    result=pd.DataFrame(rows,columns=["YEAR_ID","MONTH_ID","BUSINESS_GROUP","PRINCIPLE ID","PRINCIPAL_NAME","SALESPERSON_POSITION","KONTRIBUSI_SALESPERSON_%","TARGET_SALESPERSON","CHANNEL_OUTLET_GROUP","KONTRIBUSI_CHANNEL_%","TARGET_PRINCIPAL","AVERAGE_3_BULAN","AVERAGE_3_BULAN_SALESPERSON","PORSI_%","TARGET_BREAKDOWN","ADJUST_TARGET","TARGET_CABANG"])
     result.attrs["skipped_no_history"]=skipped_no_history
     result.attrs["skipped_no_weight"]=skipped_no_weight
     result.attrs["fallback_ids"]=fallback_ids
     result.attrs["unmapped_sellers"]=unmapped_sellers
+    result.attrs["seller_average_3_month"]=seller_average_by_name
     result.attrs["mapped_sellers_without_history"]=mapped_sellers_without_history
     result.attrs["mapped_sellers_without_channel_match"]=mapped_sellers_without_channel_match
     result.attrs["unmatched_channel_assignments"]=unmatched_channel_assignments
@@ -3710,9 +3734,9 @@ if main_section=="Breakdown Target":
                     _bt_unmatched_channel_assignments=st.session_state["_bt_allocations"].attrs.get("unmatched_channel_assignments",[])
                     st.success("Breakdown siap disesuaikan.")
                     if _bt_unmapped_sellers:
-                        st.warning(
-                            f"{len(_bt_unmapped_sellers):,} Sales Person Title tanpa mapping aktif tidak dialokasikan; "
-                            f"target dibagi ulang ke posisi yang memiliki mapping: "
+                        st.info(
+                            f"{len(_bt_unmapped_sellers):,} Sales Person Title tanpa mapping aktif tetap mendapat target; "
+                            f"channel diambil dari riwayat tiga bulan: "
                             f"{', '.join(_bt_unmapped_sellers[:20])}{'…' if len(_bt_unmapped_sellers)>20 else ''}."
                         )
                     if _bt_mapped_without_history:
@@ -3722,10 +3746,10 @@ if main_section=="Breakdown Target":
                             f"{', '.join(_bt_mapped_without_history[:20])}{'…' if len(_bt_mapped_without_history)>20 else ''}."
                         )
                     if _bt_mapped_without_channel_match:
-                        st.warning(
-                            f"{len(_bt_mapped_without_channel_match):,} POSITION_CODE tidak memiliki "
-                            f"SALES_CHANNEL yang cocok dengan Channel_group database; posisi tersebut tidak "
-                            f"menerima alokasi: {', '.join(_bt_mapped_without_channel_match[:20])}"
+                        st.info(
+                            f"{len(_bt_mapped_without_channel_match):,} POSITION_CODE memakai channel dari "
+                            f"riwayat karena SALES_CHANNEL mapping tidak cocok dengan Channel_group database: "
+                            f"{', '.join(_bt_mapped_without_channel_match[:20])}"
                             f"{'…' if len(_bt_mapped_without_channel_match)>20 else ''}."
                         )
                     if _bt_unmatched_channel_assignments:
@@ -3832,6 +3856,34 @@ if main_section=="Breakdown Target":
                 _bt_final=_apply_principal_breakdown_to_raw(_bt_raw_df,st.session_state["_bt_allocations"])
                 _bt_added_rows=len(_bt_final)-len(_bt_raw_df)
                 st.success("Validasi lolos: TARGET_REKOMENDASI_HO tidak diubah. Total TARGET_CABANG sama dengan HO per tahun, bulan, cabang, bisnis, item, Principal ID, dan sublini.")
+                _bt_summary_source=_bt_final_allocations.copy()
+                _bt_summary_source["AVERAGE_3_BULAN_SALESPERSON"]=pd.to_numeric(
+                    _bt_summary_source.get("AVERAGE_3_BULAN_SALESPERSON",0),errors="coerce"
+                ).fillna(0)
+                _bt_summary_source["TARGET_CABANG"]=pd.to_numeric(
+                    _bt_summary_source["TARGET_CABANG"],errors="coerce"
+                ).fillna(0)
+                _bt_salesperson_summary=(
+                    _bt_summary_source.groupby("SALESPERSON_POSITION",as_index=False,dropna=False)
+                    .agg(AVG_3_BULAN=("AVERAGE_3_BULAN_SALESPERSON","max"),
+                         TARGET_BREAKDOWN=("TARGET_CABANG","sum"))
+                    .rename(columns={"SALESPERSON_POSITION":"Sales Person Title"})
+                )
+                _bt_salesperson_summary["Selisih Target vs Avg 3 Bulan"]=_bt_salesperson_summary["TARGET_BREAKDOWN"]-_bt_salesperson_summary["AVG_3_BULAN"]
+                _bt_salesperson_summary["Target vs Avg 3 Bulan (%)"]=_bt_salesperson_summary.apply(
+                    lambda row:(row["TARGET_BREAKDOWN"]/row["AVG_3_BULAN"]*100) if row["AVG_3_BULAN"] else None,
+                    axis=1,
+                )
+                _bt_salesperson_summary=_bt_salesperson_summary.sort_values("Sales Person Title",kind="stable").reset_index(drop=True)
+                st.markdown("#### Summary hasil submit per Sales Person Title")
+                st.caption("Rata-rata 3 bulan dihitung dari total penjualan positif tiga bulan sebelum periode target, dibagi 3. Target adalah total TARGET_CABANG hasil breakdown setelah penyesuaian.")
+                st.dataframe(_bt_salesperson_summary,width="stretch",hide_index=True,
+                    column_config={
+                        "AVG_3_BULAN":st.column_config.NumberColumn("Avg Penjualan 3 Bulan",format="%,.0f"),
+                        "TARGET_BREAKDOWN":st.column_config.NumberColumn("Target Breakdown",format="%,.0f"),
+                        "Selisih Target vs Avg 3 Bulan":st.column_config.NumberColumn("Selisih Target vs Avg 3 Bulan",format="%,.0f"),
+                        "Target vs Avg 3 Bulan (%)":st.column_config.NumberColumn("Target / Avg 3 Bulan (%)",format="%.1f%%"),
+                    })
                 if _bt_added_rows>0:
                     st.info(f"{_bt_added_rows:,} baris Sales Person Title · Principal ID · Channel yang belum ada ditambahkan dari hasil breakdown.")
                 _bt_final_cols=_breakdown_target_columns(_bt_final)
@@ -3854,6 +3906,7 @@ if main_section=="Breakdown Target":
                 with pd.ExcelWriter(_bt_out,engine="openpyxl") as _bt_writer:
                     _bt_final.to_excel(_bt_writer,index=False,sheet_name=str(_bt_sheet)[:31])
                     st.session_state["_bt_allocations"].to_excel(_bt_writer,index=False,sheet_name="Breakdown")
+                    _bt_salesperson_summary.to_excel(_bt_writer,index=False,sheet_name="Summary Salesperson")
                 _bt_filename=f"target_cabang_{ACTIVE_BRANCH_CODE}_{int(_bt_year)}_{int(_bt_month):02d}.xlsx"
                 st.download_button("Unduh file target hasil penyesuaian (.xlsx)",_bt_out.getvalue(),_bt_filename,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",key="bt_download_final",type="primary",width="stretch")
             except Exception as _bt_err: st.error(f"File mentah gagal diproses: {_bt_err}")
