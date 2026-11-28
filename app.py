@@ -846,6 +846,19 @@ PROGRAM_SUMMARIES = {
     "PB HYC": "Monitoring program PB HYC sesuai principal ID dan periode pada kartu.",
     "PB LUMA": "Monitoring program PB LUMA dengan fokus LASERIN UNTUK MASUK ANGIN (LUMA).",
 }
+PROGRAM_DISPLAY_NAME_MIGRATION = {
+    "RB CHD":"RB CHD",
+    "NOO PDB":"RPB NOZA",
+    "PB NOZA":"SALES PDB",
+    "PB HYC":"RPB YOU",
+    "PB LUMA":"RPB NLI",
+}
+def _migrated_program_display_name(program, saved_name=None):
+    desired=PROGRAM_DISPLAY_NAME_MIGRATION.get(program)
+    current=str(saved_name or "").strip()
+    if desired and (not current or current.casefold()==str(program).casefold()):
+        return desired
+    return current or str(program)
 MONTHS = {1:"January",2:"February",3:"March",4:"April",5:"May",6:"June",7:"July",8:"August",9:"September",10:"October",11:"November",12:"December"}
 _MONTH_NAME_TO_NUMBER={str(name).casefold():number for number,name in MONTHS.items()}
 _MONTH_NAME_TO_NUMBER.update({"jan":1,"feb":2,"mar":3,"apr":4,"may":5,"jun":6,"jul":7,"aug":8,"sep":9,"oct":10,"nov":11,"dec":12,"januari":1,"februari":2,"maret":3,"mei":5,"juni":6,"juli":7,"agustus":8,"oktober":10,"desember":12})
@@ -1367,7 +1380,7 @@ def program_label(program, month=None):
         month_index=min(max(month_index,0),11)
         month=list(MONTHS.values())[month_index]
     configured_name=settings.get("program_config_by_month",{}).get(month,{}).get(program,{}).get("display_name")
-    return str(configured_name or program)
+    return _migrated_program_display_name(program,configured_name)
 
 def key(s): return " ".join(str(s).strip().lower().replace("_"," ").split())
 def col(df, kind):
@@ -3989,6 +4002,8 @@ if main_section=="Program Push" and "_active_push_month" in dir():
 
     def _prog_cfg2(prog, kind, fallback=None):
         v = _this_month_cfg2.get(prog, {}).get(kind, None)
+        if kind=="display_name":
+            return _migrated_program_display_name(prog,v if v is not None else fallback)
         if v is None and fallback is not None: return fallback
         if v is None: return PROGRAM_FILTER_DEFAULTS.get(prog, {}).get(kind, "")
         return v
